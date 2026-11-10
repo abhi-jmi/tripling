@@ -5,6 +5,12 @@ Parameters:
     Type: String
     Default: db.t4g.micro
     AllowedValues: [db.t4g.micro, db.t4g.small, db.t4g.medium]
+  BackupRetentionDays:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 35
+    Description: Automated backup retention; account plan may impose a lower maximum
   MultiAZ:
     Type: String
     Default: "false"
@@ -218,7 +224,7 @@ Resources:
       VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
       MasterUsername: tripling_owner
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: !Ref BackupRetentionDays
       DeletionProtection: true
       AutoMinorVersionUpgrade: true
       CopyTagsToSnapshot: true

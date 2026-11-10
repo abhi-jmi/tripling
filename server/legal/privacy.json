@@ -1,6 +1,6 @@
 {
   "slug": "privacy",
-  "version": "2026-11-11.2",
+  "version": "2026-11-11.3",
   "title": "Privacy Policy",
   "effectiveOn": "2026-11-10",
   "introduction": "Last updated: November 10, 2026. At Tripling (the “Platform”), we aim to protect your privacy and limit data use to operating a travel companion network. This Policy explains what the current service collects, how information is used and shared, and how to contact the operator about your rights.",
@@ -46,7 +46,7 @@
         "You can edit your profile, manage saved trips, cancel a request, leave a group, hide a listing, and log out. Logging out revokes that session; it does not delete your account or travel records. Leaving a group removes future chat access but does not automatically erase messages already sent.",
         "Contact {{contact}} to request account closure, access, correction, or deletion. There is no automated account-deletion button in the current app. The operator must assess the request, verify identity appropriately, remove or anonymize applicable active records, and explain any lawful retention or technical delay. Do not send sensitive documents through a public listing or chat.",
         "Account, trip, request, message, review, report, consent, and notification records remain while needed to provide the service, handle a concern, protect security, or meet applicable obligations. We do not promise immediate deletion of every record or an unimplemented automatic deletion timeframe.",
-        "Expired sessions and old throttle buckets are cleaned during startup or maintenance. Application logs are configured for 30-day retention and automated database backups for seven days. Manually retained snapshots can remain until removed by the operator. Removing active data does not instantly remove backup copies or copies another traveler independently saved.",
+        "Expired sessions and old throttle buckets are cleaned during startup or maintenance. Application logs are configured for 30-day retention and automated database backups default to one day, configurable within the account plan’s permitted limit. Manually retained snapshots can remain until removed by the operator. Removing active data does not instantly remove backup copies or copies another traveler independently saved.",
         "Your rights may include access, correction, deletion, consent withdrawal where applicable, and a complaint to a competent authority, depending on applicable law. Versioned policy records are retained, and signup records the Terms and Privacy versions acknowledged. Material policy changes should be communicated and any further consent required by law obtained."
       ]
     },

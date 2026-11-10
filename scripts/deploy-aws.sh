@@ -23,7 +23,7 @@ if [[ "$actual_account" != "$expected_account" ]]; then
   echo "Refusing deployment: signed in to AWS account $actual_account; expected $expected_account." >&2
   exit 1
 fi
-aws cloudformation deploy --template-file infra/foundation.yaml --stack-name "$foundation" --region "$region" --parameter-overrides MultiAZ="${TRIPLING_MULTI_AZ:-false}" --no-fail-on-empty-changeset
+aws cloudformation deploy --template-file infra/foundation.yaml --stack-name "$foundation" --region "$region" --parameter-overrides MultiAZ="${TRIPLING_MULTI_AZ:-false}" BackupRetentionDays="${TRIPLING_BACKUP_RETENTION_DAYS:-1}" --no-fail-on-empty-changeset
 repository=$(aws cloudformation describe-stacks --stack-name "$foundation" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue | [0]" --output text)
 registry=${repository%%/*}
 repository_name=${repository#*/}
