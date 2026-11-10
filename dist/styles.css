@@ -2796,3 +2796,60 @@ body.auth-screen {
     gap: 12px;
   }
 }
+
+.google-signin {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0;
+  text-decoration: none;
+}
+.location-combobox {
+  display: block;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.location-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #fff;
+  border: 1px solid #d9dfd1;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px #203a2f20;
+  max-height: 240px;
+  overflow: auto;
+  padding: 5px;
+  min-width: 150px;
+}
+.location-options [role="option"] {
+  display: block;
+  padding: 10px 12px;
+  cursor: pointer;
+  color: #203a2f;
+  font: 14px/1.4 inherit;
+}
+.location-options [role="option"]:hover,
+.location-options [aria-selected="true"] {
+  background: #edf0e7;
+  border-radius: 6px;
+}
+.traveler-row,
+.trip-notice {
+  border: 1px solid #e0e3d8;
+  padding: 16px;
+  margin: 12px 0;
+  border-radius: 12px;
+}
+.trip-notice p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.traveler-row button {
+  margin: 8px 6px 0 0;
+}
+.site-nav {
+  overflow-x: auto;
+}

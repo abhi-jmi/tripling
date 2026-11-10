@@ -75,11 +75,21 @@
       });
       user = result.user;
     },
-    async signup(email, password, confirmPassword, age, legal) {
+    async signup(
+      email,
+      password,
+      confirmPassword,
+      age,
+      legal,
+      firstName,
+      lastName,
+    ) {
       const result = await api("/auth/signup", {
         method: "POST",
         body: {
           email,
+          firstName,
+          lastName,
           password,
           confirmPassword,
           age,

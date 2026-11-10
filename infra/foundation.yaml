@@ -1,6 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling private PostgreSQL database, image repository, and application networking. Creates billable resources.
 Parameters:
+  InternetEgress:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Optional billable NAT gateway for Google OAuth HTTPS calls
   DatabaseClass:
     Type: String
     Default: db.t4g.micro
@@ -16,6 +21,7 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
 Conditions:
+  EnableInternetEgress: !Equals [!Ref InternetEgress, "true"]
   EnableMultiAZ: !Equals [!Ref MultiAZ, "true"]
 Resources:
   Repository:
@@ -96,6 +102,26 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
+  OAuthEgressAddress:
+    Type: AWS::EC2::EIP
+    Condition: EnableInternetEgress
+    DependsOn: GatewayAttachment
+    Properties:
+      Domain: vpc
+  OAuthEgressGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: EnableInternetEgress
+    DependsOn: PublicRoute
+    Properties:
+      AllocationId: !GetAtt OAuthEgressAddress.AllocationId
+      SubnetId: !Ref PublicSubnetA
+  PrivateInternetRoute:
+    Type: AWS::EC2::Route
+    Condition: EnableInternetEgress
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref OAuthEgressGateway
   PrivateRouteA:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:

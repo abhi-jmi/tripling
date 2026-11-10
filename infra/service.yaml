@@ -1,6 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling HTTPS frontend and API on ECS Fargate. No resources are created until explicitly deployed.
 Parameters:
+  GoogleOAuthSecretArn:
+    Type: String
+    Default: ""
+    Description: Optional Secrets Manager secret with clientId and clientSecret for Google sign-in
+    AllowedPattern: "^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
   FoundationStack:
     Type: String
     Default: tripling-foundation
@@ -32,6 +37,8 @@ Parameters:
     Description: Public country and state of the operator
     MinLength: 1
     MaxLength: 200
+Conditions:
+  GoogleEnabled: !Not [!Equals [!Ref GoogleOAuthSecretArn, ""]]
 Resources:
   Cluster:
     Type: AWS::ECS::Cluster
@@ -94,6 +101,12 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource:
                   Fn::ImportValue: !Sub "${FoundationStack}-DatabaseSecretArn"
+              - !If
+                - GoogleEnabled
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref GoogleOAuthSecretArn
+                - !Ref AWS::NoValue
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -201,6 +214,8 @@ Resources:
           Environment:
             - Name: NODE_ENV
               Value: production
+            - Name: GOOGLE_OAUTH_SECRET_ARN
+              Value: !Ref GoogleOAuthSecretArn
             - Name: APP_VERSION
               Value: !Ref ImageTag
             - Name: LEGAL_OPERATOR_NAME

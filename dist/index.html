@@ -62,7 +62,34 @@
             </button>
           </div>
           <p id="login-context" class="login-context" role="status" hidden></p>
+          <a
+            id="google-signin"
+            class="secondary google-signin"
+            href="/api/auth/google/start"
+            hidden
+            >Continue with Google</a
+          >
+          <p id="google-unavailable" class="password-help" hidden>
+            Google sign-in is not configured yet. Use email and password.
+          </p>
           <form id="login-form">
+            <div id="signup-names" class="form-grid" hidden>
+              <label class="form-field"
+                >First name<input
+                  id="signup-first-name"
+                  name="firstName"
+                  maxlength="50"
+                  autocomplete="given-name"
+                  disabled /></label
+              ><label class="form-field"
+                >Last name<input
+                  id="signup-last-name"
+                  name="lastName"
+                  maxlength="50"
+                  autocomplete="family-name"
+                  disabled
+              /></label>
+            </div>
             <label class="form-field" for="login-email">Email address</label>
             <div class="email-input-wrap">
               <span data-icon="mail"></span
@@ -185,6 +212,8 @@
           <nav aria-label="Main navigation">
             <a class="nav-link active" href="#discover" data-view="discover"
               >Discover</a
+            ><a class="nav-link" href="#past-trips" data-view="past-trips"
+              >Past trips</a
             ><a class="nav-link" href="#my-trips" data-view="my-trips"
               >My trips
               <span id="request-count" class="count" hidden>0</span></a
@@ -277,6 +306,7 @@
                 ><span
                   ><span class="field-title">WHERE TO?</span
                   ><input
+                    data-location
                     id="destination"
                     name="destination"
                     placeholder="Try Manali, Goa, Spiti…"
@@ -295,6 +325,7 @@
                 ><span
                   ><span class="field-title">STARTING FROM</span
                   ><input
+                    data-location
                     id="origin"
                     name="origin"
                     placeholder="Your city"
@@ -469,6 +500,7 @@
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
     <script src="auth.js"></script>
+    <script src="locations.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

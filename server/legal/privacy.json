@@ -1,6 +1,6 @@
 {
   "slug": "privacy",
-  "version": "2026-11-11.3",
+  "version": "2026-11-11.4",
   "title": "Privacy Policy",
   "effectiveOn": "2026-11-10",
   "introduction": "Last updated: November 10, 2026. At Tripling (the “Platform”), we aim to protect your privacy and limit data use to operating a travel companion network. This Policy explains what the current service collects, how information is used and shared, and how to contact the operator about your rights.",
@@ -9,10 +9,11 @@
       "heading": "1. Information we collect",
       "paragraphs": [
         "The operator is {{operator}}. The support, privacy, and grievance contact is {{contact}}. Jurisdiction: {{jurisdiction}}. Configured hosting region: {{region}}.",
-        "Account registration currently collects an email address, a salted password hash, and confirmation that you are 18 or older. A traveler profile can include a display name, city, bio, and self-declared eligibility for women-only groups. The current service does not provide dedicated phone-number, exact-age, or profile-photo collection fields.",
+        "Account registration requires first name, last name, email address, and confirmation that you are 18 or older. Email/password accounts store a salted password hash. Optional Google sign-in stores a Google subject identifier and verified email, and prefills names for your confirmation. Google-only accounts have no local password. Profiles may include city, bio, and self-declared eligibility for women-only groups.",
         "Trip postings contain information you provide about origin, destination, dates, estimated budget, transport, group size, preferences, description, itinerary, and rules. Saved trips, introductions, request decisions, memberships, group messages, reviews, in-app notifications, reports, hidden-trip choices, and accepted policy versions are also stored.",
         "Government ID uploads and automated identity verification are not implemented. Do not submit Aadhaar cards, driving licenses, voter IDs, passports, or other identity documents in listings, introductions, or chat. If verification is introduced later, its data collection and safeguards must be explained before use.",
-        "The server processes technical request information for security and login throttling. Hashed rate-limit identifiers may be derived from an IP address or submitted email. Infrastructure logs may contain IP addresses, timestamps, service events, and error information. The application does not deliberately log passwords, session tokens, or chat bodies."
+        "The server processes technical request information for security and login throttling. Hashed rate-limit identifiers may be derived from an IP address or submitted email. Infrastructure logs may contain IP addresses, timestamps, service events, and error information. The application does not deliberately log passwords, session tokens, or chat bodies.",
+        "The service stores participation history, organizer transfers, traveler blocks and reasons, the trip selected as the audience for a shared block reason, and reports about those statements. Names and bios can be found by signed-in travelers through name search; private account emails are excluded."
       ]
     },
     {
@@ -22,7 +23,8 @@
         "An absolute “no sharing with anyone” promise would be inaccurate for a companion network. Your trip postings, organizer display name, and published reviews are public. A join-request introduction and profile bio are shared with the organizer. Registered group members can see member names, bios, and group messages. Your account email and password hash are not exposed in public listings.",
         "The AWS deployment uses service providers to host the application, PostgreSQL database, secrets, encrypted storage and backups, and operational logs. Authorized operators and administrators may access records to run the service, respond to requests, or investigate reports. Provider processing is necessary to deliver the platform; it is not a sale of data.",
         "The current stylesheet loads fonts from Google Fonts, which can receive your IP address and browser request headers when a font is requested. Trip photos are bundled with the application rather than requested from an image service during page visits.",
-        "Information may be disclosed when required by a legally valid order or other lawful obligation, or where another disclosure is permitted by applicable law for a specific legitimate purpose. The operator must assess the scope, legal basis, and any notice requirements rather than treating every complaint or investigation as an automatic right to disclose all records."
+        "Information may be disclosed when required by a legally valid order or other lawful obligation, or where another disclosure is permitted by applicable law for a specific legitimate purpose. The operator must assess the scope, legal basis, and any notice requirements rather than treating every complaint or investigation as an automatic right to disclose all records.",
+        "If you choose Google sign-in, Google processes the authentication request under its own policies. We request only OpenID, email and basic profile scopes. Existing email/password accounts must sign in first and deliberately connect a matching Google account. A shared block reason is visible only to registered participants of the selected shared trip, including participants who left; guests and unrelated travelers cannot see it. Choosing a private block keeps the reason visible only to its author and authorized operators. Statements are attributed to the blocking user and are not verified findings by Tripling. Blocking hides messages between the affected travelers and restricts new group requests/approvals; it does not remove existing members or erase their content."
       ]
     },
     {
@@ -37,7 +39,8 @@
       "heading": "4. Cookies and tracking data",
       "paragraphs": [
         "We use an essential session cookie to keep you logged in. In production it is HttpOnly, Secure, and SameSite=Lax; the server stores a hash of the random token. Sessions expire after seven days unless ended earlier. We do not use tracking cookies to follow activity across other websites.",
-        "The browser uses sessionStorage for an intended in-app action so you can return after login. Passwords and authentication tokens are not stored by the app in localStorage or sessionStorage. External font requests are described above."
+        "The browser uses sessionStorage for an intended in-app action so you can return after login. Passwords and authentication tokens are not stored by the app in localStorage or sessionStorage. External font requests are described above.",
+        "Google sign-in uses short-lived HttpOnly browser-binding and account-completion cookies and temporary server-side state, nonce and PKCE records. They expire after ten minutes and are removed when consumed or during later sign-in maintenance. OAuth tokens are not stored in browser storage."
       ]
     },
     {
@@ -47,7 +50,8 @@
         "Contact {{contact}} to request account closure, access, correction, or deletion. There is no automated account-deletion button in the current app. The operator must assess the request, verify identity appropriately, remove or anonymize applicable active records, and explain any lawful retention or technical delay. Do not send sensitive documents through a public listing or chat.",
         "Account, trip, request, message, review, report, consent, and notification records remain while needed to provide the service, handle a concern, protect security, or meet applicable obligations. We do not promise immediate deletion of every record or an unimplemented automatic deletion timeframe.",
         "Expired sessions and old throttle buckets are cleaned during startup or maintenance. Application logs are configured for 30-day retention and automated database backups default to one day, configurable within the account plan’s permitted limit. Manually retained snapshots can remain until removed by the operator. Removing active data does not instantly remove backup copies or copies another traveler independently saved.",
-        "Your rights may include access, correction, deletion, consent withdrawal where applicable, and a complaint to a competent authority, depending on applicable law. Versioned policy records are retained, and signup records the Terms and Privacy versions acknowledged. Material policy changes should be communicated and any further consent required by law obtained."
+        "Your rights may include access, correction, deletion, consent withdrawal where applicable, and a complaint to a competent authority, depending on applicable law. Versioned policy records are retained, and signup records the Terms and Privacy versions acknowledged. Material policy changes should be communicated and any further consent required by law obtained.",
+        "Users cannot delete or cancel a published trip record. Any member, including its creator, can leave. Organizer duties transfer to another active registered member, or new requests close if nobody remains. Retained past-trip records and published reviews remain available; leaving alone does not request erasure. Contact the operator for an applicable correction, removal or account-closure request. Only registered participation overlapping the trip dates permits a review; this is not independent proof of physical travel."
       ]
     },
     {

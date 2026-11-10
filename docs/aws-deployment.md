@@ -138,3 +138,7 @@ The foundation stack does not depend on the domain certificate. From the cloned 
 The requested ACM certificate is `arn:aws:acm:ap-southeast-2:669991883783:certificate/0d55419d-b822-4fb9-9643-f8426199f20b`. Its validation CNAME has been observed publicly with the expected value, and the owner has reported ACM status ISSUED. Recheck the certificate status if deployment is delayed. The private database and application must use this same deployment region.
 
 Automated RDS backup retention defaults to one day for the current account-plan deployment. Set `TRIPLING_BACKUP_RETENTION_DAYS` explicitly to change it within the plan’s permitted limit (template range: 1–35 days). The earlier seven-day configuration was rejected by RDS. Inspect a failed stack’s status and remaining resources before deleting or recreating it; a `ROLLBACK_COMPLETE` stack cannot simply be updated. Retained secrets or repositories may remain after rollback and should not be removed without verifying they are unused.
+
+## Google sign-in
+
+See [Google sign-in setup](google-sign-in.md) for the OAuth client, Secrets Manager credentials, optional billable NAT route, and post-deployment checks. An ordinary application release does not activate Google by itself. Existing email/password login remains available.

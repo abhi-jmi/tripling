@@ -77,7 +77,7 @@ Browser → HTTPS Application Load Balancer → ECS Fargate frontend/API
                                  credentials in Secrets Manager
 ```
 
-- `infra/foundation.yaml`: VPC, two public load-balancer subnets, two private application/database subnets, ECR repository, encrypted RDS PostgreSQL, one-day default automated backups, generated database credentials, private ECR/Logs/Secrets Manager endpoints, and an S3 gateway endpoint for image layers. There is no NAT gateway and no public database.
+- `infra/foundation.yaml`: VPC, two public load-balancer subnets, two private application/database subnets, ECR repository, encrypted RDS PostgreSQL, one-day default automated backups, generated database credentials, private ECR/Logs/Secrets Manager endpoints, and an S3 gateway endpoint for image layers. There is no NAT gateway by default and no public database. Google sign-in can optionally enable a billable NAT gateway for outbound HTTPS; see [Google setup](docs/google-sign-in.md).
 - `infra/service.yaml`: HTTPS load balancer, ACM certificate binding, HTTP-to-HTTPS redirect, non-root Fargate container, scoped IAM roles, health checks, rolling deployments with circuit-breaker rollback, CloudWatch logs, and CPU-based scaling from one to three tasks.
 - `Dockerfile`: Node.js 22 container with production dependencies and bundled RDS trust roots. Production database connections require certificate-verified TLS. AWS credentials come from the ECS task role; the application retrieves its database secret without exposing it to the browser.
 - `scripts/deploy-aws.sh`: initial infrastructure setup and explicit infrastructure updates.
@@ -124,3 +124,15 @@ The reporting database is implemented; a moderator console, operational review p
 Photos: Unsplash. Fonts: DM Sans and Manrope with system fallbacks. RDS CA bundle: `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`; refresh it as part of certificate maintenance.
 
 Automated RDS backup retention defaults to one day for the current account-plan deployment. Set `TRIPLING_BACKUP_RETENTION_DAYS` explicitly to change it within the plan’s permitted limit (template range: 1–35 days). The earlier seven-day configuration was rejected by RDS. Inspect a failed stack’s status and remaining resources before deleting or recreating it; a `ROLLBACK_COMPLETE` stack cannot simply be updated. Retained secrets or repositories may remain after rollback and should not be removed without verifying they are unused.
+
+## Traveler accounts and trip history
+
+Registration requires first and last name. Existing accounts supply those fields in their profile before creating or joining trips. [Google sign-in setup](docs/google-sign-in.md) explains the real OAuth flow, credentials, and optional AWS outbound route.
+
+Location inputs provide keyboard-accessible prefix suggestions in alphabetical order from the database catalog and posted trip locations; custom destinations remain allowed. Completed trips are available under **Past trips**, with public reviews and counts. Travel dates use Asia/Kolkata.
+
+Published trips cannot be canceled or deleted through user APIs. Any member, including the creator, can leave; organizer duties transfer to the earliest remaining active registered member. If none remain, requests close and the trip record stays available. Participation history supports reviews after leaving, provided membership overlapped the trip dates. Existing pre-migration departures cannot be reconstructed from old records that were already removed.
+
+Signed-in users can search traveler names from their profile and block anyone with a category and a reason of at least 20 characters. A private reason is visible only to its author; selecting a shared trip makes the reason visible only to that trip's registered participants, including those who left. It is labeled as the author's statement, with a reporting option. Blocks restrict joining/approval and hide messages between the affected people; existing members remain free to leave. Reports are stored for operator follow-up; there is no automated moderation decision or emergency monitoring.
+
+Migration `003_travelers_and_history.sql` is additive and runs at server startup; it retains existing accounts and trips, backfills current participation, and leaves legacy names for users to complete rather than inventing last names. Legal documents are versioned to describe these features. Operator-mediated data removal requests remain available via the published contact.

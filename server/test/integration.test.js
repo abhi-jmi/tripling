@@ -27,7 +27,25 @@ await publishLegalDocuments(pool, {
   NODE_ENV: "test",
   LEGAL_OPERATOR_NAME: " ",
 });
-const app = createApp(pool, { production: false });
+let googleClaims = {
+  sub: "google-new-user",
+  email: "google@example.com",
+  email_verified: true,
+  given_name: "Google",
+  family_name: "Traveler",
+};
+const googleAdapter = {
+  authorize: async (args) =>
+    "https://accounts.google.com/o/oauth2/v2/auth?" +
+    new URLSearchParams({
+      state: args.state,
+      redirect_uri: args.redirectUri,
+      nonce: args.nonce,
+      code_challenge: args.verifier,
+    }),
+  exchange: async () => googleClaims,
+};
+const app = createApp(pool, { production: false, googleAdapter });
 const server = app.listen(0, "127.0.0.1");
 await new Promise((resolve) => server.once("listening", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -57,6 +75,8 @@ class Client {
       method: "POST",
       body: {
         email,
+        firstName: "Test",
+        lastName: "Traveler",
         password: "A long test passphrase!",
         confirmPassword: "A long test passphrase!",
         age: true,
@@ -72,7 +92,8 @@ class Client {
     const r = await this.request("/profile", {
       method: "PUT",
       body: {
-        name,
+        firstName: name,
+        lastName: "Traveler",
         city: "Delhi",
         gender,
         bio: "Easygoing traveler",
@@ -147,6 +168,8 @@ try {
         const docs = (await anonymous.request("/legal")).body.documents;
         const body = {
           email: "legal-test@example.com",
+          firstName: "Legal",
+          lastName: "Tester",
           password: "A long test passphrase!",
           confirmPassword: "A long test passphrase!",
           age: true,
@@ -181,9 +204,18 @@ try {
     await t.test(
       "signup validates password confirmation and adult policy",
       async () => {
+        const docs = (await anonymous.request("/legal")).body.documents;
+        const required = {
+          firstName: "Test",
+          lastName: "Traveler",
+          acceptedLegal: true,
+          termsVersion: docs.terms.version,
+          privacyVersion: docs.privacy.version,
+        };
         let r = await anonymous.request("/auth/signup", {
           method: "POST",
           body: {
+            ...required,
             email: "bad@example.com",
             password: "long-enough-password",
             confirmPassword: "different",
@@ -191,9 +223,11 @@ try {
           },
         });
         assert.equal(r.status, 400);
+        assert.match(r.body.error, /Passwords do not match/);
         r = await anonymous.request("/auth/signup", {
           method: "POST",
           body: {
+            ...required,
             email: "bad@example.com",
             password: "long-enough-password",
             confirmPassword: "long-enough-password",
@@ -289,7 +323,7 @@ try {
         "SELECT display_name FROM users WHERE id=$1",
         [ownerUser.id],
       );
-      assert.equal(rows.rows[0].display_name, "Organizer");
+      assert.equal(rows.rows[0].display_name, "Organizer Traveler");
     });
     await t.test("anonymous users cannot mutate records", async () => {
       const r = await anonymous.request("/trips", {
@@ -551,6 +585,10 @@ try {
           "UPDATE trips SET starts_on='2020-01-01',ends_on='2020-01-03' WHERE id=$1",
           [womenTripId],
         );
+        await pool.query(
+          "UPDATE trip_participants SET first_joined_at='2019-12-31',last_joined_at='2019-12-31' WHERE trip_id=$1",
+          [womenTripId],
+        );
         const r = await alice.request(`/trips/${womenTripId}/reviews`, {
           method: "POST",
           body: {
@@ -606,34 +644,460 @@ try {
       );
     });
     await t.test(
-      "only owners can cancel; canceled groups are read-only",
+      "trip records cannot be canceled or deleted, even by creator",
       async () => {
+        for (const client of [owner, bob])
+          for (const [path, method] of [
+            [`/trips/${tripId}/cancel`, "POST"],
+            [`/trips/${tripId}`, "DELETE"],
+          ])
+            assert.equal(
+              (await client.request(path, { method, body: {} })).status,
+              405,
+            );
+      },
+    );
+    await t.test(
+      "prefix locations are alphabetical and names are mandatory",
+      async () => {
+        const locations = (await anonymous.request("/locations?q=m")).body
+          .locations;
+        assert(locations.length > 3);
+        assert(locations.every((n) => n.toLowerCase().startsWith("m")));
+        assert.deepEqual(
+          locations,
+          [...locations].sort((a, b) =>
+            a.toLowerCase().localeCompare(b.toLowerCase()),
+          ),
+        );
         assert.equal(
           (
-            await bob.request(`/trips/${tripId}/cancel`, {
+            await owner.request("/profile", {
+              method: "PUT",
+              body: {
+                firstName: "Organizer",
+                lastName: " ",
+                city: "Delhi",
+                gender: "other",
+                bio: "",
+                age: true,
+              },
+            })
+          ).status,
+          400,
+        );
+        const docs = (await anonymous.request("/legal")).body.documents;
+        for (const names of [
+          { firstName: " ", lastName: "Traveler" },
+          { firstName: "Test", lastName: "" },
+        ]) {
+          const invalid = await anonymous.request("/auth/signup", {
+            method: "POST",
+            body: {
+              ...names,
+              email: "no-name@example.com",
+              password: "A long test passphrase!",
+              confirmPassword: "A long test passphrase!",
+              age: true,
+              acceptedLegal: true,
+              termsVersion: docs.terms.version,
+              privacyVersion: docs.privacy.version,
+            },
+          });
+          assert.equal(invalid.status, 400);
+          assert.match(invalid.body.error, /name.*required/i);
+        }
+        await pool.query(
+          "UPDATE users SET first_name=NULL,last_name=NULL WHERE id=$1",
+          [outsiderUser.id],
+        );
+        assert.equal(
+          (await outsider.request("/trips", { method: "POST", body: trip }))
+            .status,
+          409,
+        );
+        await outsider.profile("Outsider");
+      },
+    );
+    await t.test(
+      "blocks require reasons, preserve members and keep notices inside the trip",
+      async () => {
+        const d = {
+          userId: aliceUser.id,
+          tripId: womenTripId,
+          category: "Safety concern",
+          reason: "Repeatedly ignored the agreed meeting boundaries.",
+        };
+        assert.equal(
+          (
+            await owner.request("/blocks", {
               method: "POST",
+              body: { ...d, reason: "short" },
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await owner.request("/blocks", {
+              method: "POST",
+              body: { ...d, userId: ownerUser.id },
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (await outsider.request("/blocks", { method: "POST", body: d }))
+            .status,
+          403,
+        );
+        const block = await owner.request("/blocks", {
+          method: "POST",
+          body: d,
+        });
+        assert.equal(block.status, 201);
+        const inside = await alice.request(`/trips/${womenTripId}/members`);
+        assert.equal(inside.body.blocks[0].reason, d.reason);
+        assert(
+          inside.body.members.some((m) => m.id === aliceUser.id && m.active),
+        );
+        assert.equal(
+          (await outsider.request(`/trips/${womenTripId}/members`)).status,
+          403,
+        );
+        assert.equal(
+          (await anonymous.request(`/trips/${womenTripId}/members`)).status,
+          401,
+        );
+        assert(
+          !JSON.stringify((await outsider.request("/bootstrap")).body).includes(
+            d.reason,
+          ),
+        );
+        assert.equal(
+          (await outsider.request(`/travelers/${aliceUser.id}`)).body.notices
+            .length,
+          0,
+        );
+        assert.equal(
+          (
+            await outsider.request(`/blocks/${block.body.id}`, {
+              method: "DELETE",
               body: {},
+            })
+          ).status,
+          404,
+        );
+        assert.equal(
+          (
+            await alice.request(`/blocks/${block.body.id}/report`, {
+              method: "POST",
+              body: { reason: "This statement omits important context." },
+            })
+          ).status,
+          201,
+        );
+        assert.equal(
+          (
+            await outsider.request(`/blocks/${block.body.id}/report`, {
+              method: "POST",
+              body: { reason: "I am not in this trip at all." },
             })
           ).status,
           403,
         );
         assert.equal(
           (
-            await owner.request(`/trips/${tripId}/cancel`, {
-              method: "POST",
+            await owner.request(`/blocks/${block.body.id}`, {
+              method: "DELETE",
               body: {},
             })
           ).status,
           200,
         );
+      },
+    );
+    await t.test(
+      "blocking hides messages both ways and prevents join approval",
+      async () => {
+        const fresh = (
+          await owner.request("/trips", {
+            method: "POST",
+            body: { ...trip, seats: 3 },
+          })
+        ).body.id;
         assert.equal(
           (
-            await owner.request(`/trips/${tripId}/messages`, {
+            await bob.request(`/trips/${fresh}/requests`, {
               method: "POST",
-              body: { body: "Cannot write after cancel" },
+              body: { note: "Happy to travel with this small crew." },
+            })
+          ).status,
+          201,
+        );
+        let block = await owner.request("/blocks", {
+          method: "POST",
+          body: {
+            userId: bobUser.id,
+            category: "Other",
+            reason: "We prefer to avoid traveling in the same group.",
+          },
+        });
+        assert.equal(block.status, 201);
+        assert.equal(
+          (
+            await owner.request(`/trips/${fresh}/requests/${bobUser.id}`, {
+              method: "PUT",
+              body: { status: "accepted" },
+            })
+          ).status,
+          403,
+        );
+        await owner.request(`/blocks/${block.body.id}`, {
+          method: "DELETE",
+          body: {},
+        });
+        await owner.request(`/trips/${fresh}/requests/${bobUser.id}`, {
+          method: "PUT",
+          body: { status: "accepted" },
+        });
+        await bob.request(`/trips/${fresh}/messages`, {
+          method: "POST",
+          body: { body: "Private crew planning message" },
+        });
+        block = await owner.request("/blocks", {
+          method: "POST",
+          body: {
+            userId: bobUser.id,
+            tripId: fresh,
+            category: "Other",
+            reason: "We prefer to avoid traveling in the same group.",
+          },
+        });
+        assert.equal(
+          (await owner.request(`/trips/${fresh}/messages`)).body.messages
+            .length,
+          0,
+        );
+        await owner.request(`/trips/${fresh}/messages`, {
+          method: "POST",
+          body: { body: "Another crew planning message" },
+        });
+        assert.equal(
+          (await bob.request(`/trips/${fresh}/messages`)).body.messages.length,
+          1,
+        );
+        const leave = await owner.request(`/trips/${fresh}/requests`, {
+          method: "DELETE",
+          body: {},
+        });
+        assert.equal(leave.body.organizerId, bobUser.id);
+        assert.equal(
+          (await owner.request(`/trips/${fresh}/messages`)).status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.request(`/trips/${fresh}/requests`, {
+              method: "POST",
+              body: { note: "I am trying to join this group again." },
+            })
+          ).status,
+          403,
+        );
+        await bob.request(`/trips/${fresh}/requests`, {
+          method: "DELETE",
+          body: {},
+        });
+        const record = (await anonymous.request("/bootstrap")).body.trips.find(
+          (t) => t.id === fresh,
+        );
+        assert(record);
+        assert.equal(record.organizerId, null);
+        assert.equal(
+          (
+            await outsider.request(`/trips/${fresh}/requests`, {
+              method: "POST",
+              body: { note: "There is nobody organizing this trip." },
             })
           ).status,
           409,
+        );
+      },
+    );
+    await t.test(
+      "past trips retain reviews after leaving and reject joining and messages",
+      async () => {
+        assert.equal(
+          (
+            await owner.request(`/trips/${womenTripId}/messages`, {
+              method: "POST",
+              body: { body: "Too late to send" },
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (
+            await outsider.request(`/trips/${womenTripId}/requests`, {
+              method: "POST",
+              body: { note: "Trying to join a completed journey." },
+            })
+          ).status,
+          400,
+        );
+        await alice.request(`/trips/${womenTripId}/requests`, {
+          method: "DELETE",
+          body: {},
+        });
+        assert.equal(
+          (await alice.request(`/trips/${womenTripId}/members`)).status,
+          200,
+        );
+        assert.equal(
+          (await anonymous.request(`/trips/${womenTripId}/reviews`)).body
+            .reviews.length,
+          1,
+        );
+        const archive = (await anonymous.request("/bootstrap")).body.trips.find(
+          (t) => t.id === womenTripId,
+        );
+        assert.equal(archive.lifecycle, "completed");
+        assert.equal(archive.reviewCount, 1);
+        assert.equal(
+          (
+            await owner.request(`/trips/${womenTripId}/reviews`, {
+              method: "POST",
+              body: {
+                travelerId: aliceUser.id,
+                rating: 4,
+                body: "Respectful and reliable on our shared journey.",
+              },
+            })
+          ).status,
+          201,
+        );
+      },
+    );
+    await t.test(
+      "Google callback binds browser and state, verifies email and does not auto-link",
+      async () => {
+        async function start(cookie = "") {
+          const r = await fetch(base + "/api/auth/google/start", {
+            redirect: "manual",
+            headers: { Cookie: cookie },
+          });
+          assert.equal(r.status, 302);
+          return {
+            state: new URL(r.headers.get("location")).searchParams.get("state"),
+            cookie: r.headers.getSetCookie()[0].split(";")[0],
+          };
+        }
+        async function callback(flow, cookie = flow.cookie) {
+          return fetch(
+            base +
+              "/api/auth/google/callback?state=" +
+              flow.state +
+              "&code=test-code",
+            { redirect: "manual", headers: { Cookie: cookie } },
+          );
+        }
+        const flow = await start();
+        assert.match(
+          (await callback(flow, "")).headers.get("location"),
+          /expired/,
+        );
+        googleClaims = { ...googleClaims, email_verified: false };
+        assert.match(
+          (await callback(flow)).headers.get("location"),
+          /verification/,
+        );
+        assert.match((await callback(flow)).headers.get("location"), /expired/);
+        googleClaims = {
+          ...googleClaims,
+          email_verified: true,
+          email: "owner@example.com",
+        };
+        assert.match(
+          (await callback(await start())).headers.get("location"),
+          /existing/,
+        );
+        googleClaims = { ...googleClaims, email: "google@example.com" };
+        const pending = await callback(await start());
+        assert.equal(pending.headers.get("location"), "/#sso-complete");
+        const google = new Client();
+        google.cookie = pending.headers
+          .getSetCookie()
+          .find((c) => c.startsWith("tripling_pending="))
+          .split(";")[0];
+        const p = await google.request("/auth/google/pending");
+        assert.equal(p.body.email, "google@example.com");
+        const docs = (await google.request("/legal")).body.documents;
+        const details = {
+          firstName: "Google",
+          lastName: "Traveler",
+          age: true,
+          acceptedLegal: true,
+          termsVersion: docs.terms.version,
+          privacyVersion: docs.privacy.version,
+        };
+        assert.equal(
+          (
+            await google.request("/auth/google/complete", {
+              method: "POST",
+              body: { ...details, lastName: "" },
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await google.request("/auth/google/complete", {
+              method: "POST",
+              body: { ...details, termsVersion: "old" },
+            })
+          ).status,
+          409,
+        );
+        const complete = await google.request("/auth/google/complete", {
+          method: "POST",
+          body: details,
+        });
+        assert.equal(complete.status, 201);
+        assert.equal(complete.body.user.googleLinked, true);
+        const dbUser = (
+          await pool.query("SELECT password_hash FROM users WHERE email=$1", [
+            "google@example.com",
+          ])
+        ).rows[0];
+        assert.equal(dbUser.password_hash, null);
+        const linked = await callback(await start());
+        assert.equal(linked.headers.get("location"), "/#discover");
+        const linkFlow = await fetch(
+          base + "/api/auth/google/start?mode=link",
+          { redirect: "manual", headers: { Cookie: owner.cookie } },
+        );
+        const link = {
+          state: new URL(linkFlow.headers.get("location")).searchParams.get(
+            "state",
+          ),
+          cookie:
+            owner.cookie +
+            "; " +
+            linkFlow.headers.getSetCookie()[0].split(";")[0],
+        };
+        googleClaims = {
+          ...googleClaims,
+          sub: "owner-google",
+          email: "owner@example.com",
+        };
+        assert.equal(
+          (await callback(link)).headers.get("location"),
+          "/#profile",
+        );
+        assert.equal(
+          (await owner.request("/auth/providers")).body.googleLinked,
+          true,
         );
       },
     );

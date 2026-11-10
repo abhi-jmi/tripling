@@ -28,6 +28,10 @@ async function pageFor() {
 }
 async function signup(page, email, name) {
   await page.locator('[data-auth-mode="signup"]').click();
+  await page.locator("#signup-first-name").fill(name.split(" ")[0]);
+  await page
+    .locator("#signup-last-name")
+    .fill(name.split(" ").slice(1).join(" "));
   await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill("A browser test passphrase!");
   await page.locator("#confirm-password").fill("A browser test passphrase!");
@@ -36,7 +40,10 @@ async function signup(page, email, name) {
   await page.locator("#auth-submit").click();
   await page.locator("#app-shell:not([hidden])").waitFor();
   await page.locator(".profile-button").click();
-  await page.locator("#profile-form [name=name]").fill(name);
+  await page.locator("#profile-form [name=firstName]").fill(name.split(" ")[0]);
+  await page
+    .locator("#profile-form [name=lastName]")
+    .fill(name.split(" ").slice(1).join(" "));
   await page.locator("#profile-form [name=gender]").selectOption("woman");
   await page.locator("#profile-form [type=submit]").click();
   await page.locator("#modal").waitFor({ state: "hidden" });
@@ -48,6 +55,8 @@ try {
     fullPage: true,
   });
   await organizer.locator('[data-auth-mode="signup"]').click();
+  await organizer.locator("#signup-first-name").fill("Browser");
+  await organizer.locator("#signup-last-name").fill("Organizer");
   await organizer
     .locator("#login-email")
     .fill(`organizer-${stamp}@example.com`);
@@ -133,6 +142,19 @@ try {
   });
   await organizer.locator(".modal-close").click();
   await organizer.locator("[data-view=discover]").click();
+  await organizer.locator("#destination").fill("Ma");
+  await organizer.locator("#destination").press("ArrowDown");
+  await organizer
+    .locator(".location-options:not([hidden]) [role=option]")
+    .first()
+    .waitFor();
+  await organizer.locator("#destination").press("ArrowDown");
+  await organizer.locator("#destination").press("Enter");
+  assert(
+    (await organizer.locator("#destination").inputValue()).startsWith("Ma"),
+  );
+  await organizer.locator("#destination").fill("");
+  await organizer.locator("#destination").press("Escape");
   await organizer.screenshot({
     path: resolve("work/browser-check/discovery-desktop.png"),
     fullPage: true,
@@ -183,7 +205,94 @@ try {
     path: resolve("work/browser-check/privacy-mobile.png"),
     fullPage: true,
   });
+  // The author can share a block reason only inside a shared trip.
+  await organizer.locator(".card-title").click();
+  await organizer.locator("[data-crew]").click();
+  const crewMember = organizer
+    .locator(".traveler-row")
+    .filter({ hasText: "Browser Member" });
+  await crewMember.locator("[data-traveler]").click();
+  await organizer
+    .locator("#block-form [name=tripId]")
+    .selectOption({
+      label: "Registered participants: A shared mountain weekend",
+    });
+  await organizer
+    .locator("#block-form [name=reason]")
+    .fill("Repeatedly ignored our agreed communication boundaries.");
+  await organizer.locator("#block-form [type=submit]").click();
+  await organizer.locator("[data-unblock]").waitFor();
+  await organizer.locator(".modal-close").click();
   await member.locator(".modal-close").click();
+  await member.locator(".card-title").click();
+  await member.locator("[data-crew]").click();
+  await member
+    .getByText("Repeatedly ignored our agreed communication boundaries.", {
+      exact: false,
+    })
+    .waitFor();
+  await member.locator("[data-notice-report]").click();
+  await member
+    .locator("#notice-report-form [name=reason]")
+    .fill("The statement needs context from both participants.");
+  await member.locator("#notice-report-form [type=submit]").click();
+  await member.locator("#modal").waitFor({ state: "hidden" });
+  await organizer.locator(".card-title").click();
+  assert.equal(await organizer.locator("[data-cancel-trip]").count(), 0);
+  await organizer.locator("[data-leave]").click();
+  await organizer.locator("[data-confirm-leave]").click();
+  await organizer.locator("#modal").waitFor({ state: "hidden" });
+  const retained = await organizer.evaluate(
+    async () => (await (await fetch("/api/bootstrap")).json()).trips[0],
+  );
+  assert(retained.organizerId);
+  assert.equal(retained.isMember, false);
+  assert.equal(retained.participated, true);
+  await member.reload();
+  await member.locator("[data-view=my-trips]").click();
+  await member.locator("[data-incoming]").waitFor();
+  await member.locator("[data-view=past-trips]").click();
+  await member
+    .getByText("Past journeys. Shared stories.", { exact: true })
+    .waitFor();
+  if (process.env.TEST_DATABASE_URL) {
+    if (!new URL(process.env.TEST_DATABASE_URL).pathname.endsWith("_test"))
+      throw new Error(
+        "Past-trip browser fixture requires a dedicated _test database.",
+      );
+    const { default: pg } = await import("pg");
+    const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    try {
+      await db.query(
+        "UPDATE trips SET starts_on='2020-01-01',ends_on='2020-01-03' WHERE id=$1",
+        [retained.id],
+      );
+      await db.query(
+        "UPDATE trip_participants SET first_joined_at='2019-12-31',last_joined_at='2019-12-31' WHERE trip_id=$1",
+        [retained.id],
+      );
+    } finally {
+      await db.end();
+    }
+    await member.reload();
+    await member.locator(".card-title").click();
+    await member.locator("[data-review]").click();
+    await member
+      .locator("#review-form [name=body]")
+      .fill("Reliable planning and respectful travel arrangements.");
+    await member.locator("#review-form [type=submit]").click();
+    await member
+      .locator("#trip-reviews")
+      .getByText("Reliable planning and respectful travel arrangements.", {
+        exact: true,
+      })
+      .waitFor();
+    await member.screenshot({
+      path: resolve("work/browser-check/past-trip-review.png"),
+      fullPage: true,
+    });
+    await member.locator(".modal-close").click();
+  }
   await member.locator(".profile-button").click();
   await member.locator("[data-action=logout]").click();
   await member.locator("#login-page:not([hidden])").waitFor();
@@ -195,7 +304,7 @@ try {
   await member.locator(".card-title").waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    "Browser checks passed: signup validation, real login, profile, create, guest redirect/resume, saves, join approval, shared chat, escaped message content, persistent login data, and mobile layouts.",
+    "Browser checks passed: signup validation, real login, profile, create, guest redirect/resume, saves, join approval, shared chat, escaped message content, persistent login data, participant-only block notices and reporting, organizer leave/handover, past-trip reviews, keyboard location dropdowns, and mobile layouts.",
   );
 } finally {
   for (const ctx of contexts) await ctx.close();

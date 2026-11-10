@@ -23,7 +23,10 @@ if [[ "$actual_account" != "$expected_account" ]]; then
   echo "Refusing deployment: signed in to AWS account $actual_account; expected $expected_account." >&2
   exit 1
 fi
-aws cloudformation deploy --template-file infra/foundation.yaml --stack-name "$foundation" --region "$region" --parameter-overrides MultiAZ="${TRIPLING_MULTI_AZ:-false}" BackupRetentionDays="${TRIPLING_BACKUP_RETENTION_DAYS:-1}" --no-fail-on-empty-changeset
+# Omit optional parameters to preserve existing stack settings on subsequent runs.
+foundation_options=()
+if [[ -n ${TRIPLING_GOOGLE_SECRET_ARN:-} ]]; then foundation_options+=(InternetEgress=true); elif [[ -n ${TRIPLING_INTERNET_EGRESS:-} ]]; then foundation_options+=("InternetEgress=$TRIPLING_INTERNET_EGRESS"); fi
+aws cloudformation deploy --template-file infra/foundation.yaml --stack-name "$foundation" --region "$region" --parameter-overrides MultiAZ="${TRIPLING_MULTI_AZ:-false}" BackupRetentionDays="${TRIPLING_BACKUP_RETENTION_DAYS:-1}" "${foundation_options[@]}" --no-fail-on-empty-changeset
 repository=$(aws cloudformation describe-stacks --stack-name "$foundation" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue | [0]" --output text)
 registry=${repository%%/*}
 repository_name=${repository#*/}
@@ -34,6 +37,8 @@ if ! aws ecr describe-images --region "$region" --repository-name "$repository_n
   docker build "${build_args[@]}" .
   docker push "$repository:$image_tag"
 fi
-aws cloudformation deploy --template-file infra/service.yaml --stack-name "$service" --region "$region" --capabilities CAPABILITY_IAM --parameter-overrides FoundationStack="$foundation" ImageTag="$image_tag" CertificateArn="$TRIPLING_CERTIFICATE_ARN" DomainName="$TRIPLING_DOMAIN" "LegalOperatorName=$LEGAL_OPERATOR_NAME" "LegalContactEmail=$LEGAL_CONTACT_EMAIL" "LegalJurisdiction=$LEGAL_JURISDICTION" --no-fail-on-empty-changeset
+service_options=()
+if [[ -n ${TRIPLING_GOOGLE_SECRET_ARN+x} ]]; then service_options+=("GoogleOAuthSecretArn=$TRIPLING_GOOGLE_SECRET_ARN"); fi
+aws cloudformation deploy --template-file infra/service.yaml --stack-name "$service" --region "$region" --capabilities CAPABILITY_IAM --parameter-overrides FoundationStack="$foundation" ImageTag="$image_tag" CertificateArn="$TRIPLING_CERTIFICATE_ARN" DomainName="$TRIPLING_DOMAIN" "LegalOperatorName=$LEGAL_OPERATOR_NAME" "LegalContactEmail=$LEGAL_CONTACT_EMAIL" "LegalJurisdiction=$LEGAL_JURISDICTION" "${service_options[@]}" --no-fail-on-empty-changeset
 aws cloudformation describe-stacks --stack-name "$service" --region "$region" --query "Stacks[0].Outputs" --output table
 echo 'Finish DNS setup using DnsTarget, then verify /healthz and signup/login over HTTPS.'
