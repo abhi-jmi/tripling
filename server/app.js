@@ -2,6 +2,11 @@ import express from "express";
 import helmet from "helmet";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
+import {
+  currentLegalDocuments,
+  legalMetadata,
+  renderLegalPage,
+} from "./legal.js";
 import { transaction } from "./db.js";
 import {
   cookieName,
@@ -38,6 +43,12 @@ const signupSchema = z
     email,
     password,
     confirmPassword: z.string().max(128),
+    acceptedLegal: z.literal(true, {
+      error:
+        "Agree to the Terms and acknowledge the Privacy Policy to create an account.",
+    }),
+    termsVersion: z.string().min(1).max(80),
+    privacyVersion: z.string().min(1).max(80),
     age: z.literal(true, { error: "You must be 18 or older to sign up." }),
   })
   .refine((v) => v.password === v.confirmPassword, {
@@ -150,10 +161,30 @@ export function createApp(
   app.get("/healthz", async (req, res) => {
     try {
       await pool.query("SELECT 1");
-      res.json({ status: "ok" });
+      res
+        .set("Cache-Control", "no-store")
+        .json({
+          status: "ok",
+          version: process.env.APP_VERSION || "development",
+        });
     } catch {
       res.status(503).json({ status: "unavailable" });
     }
+  });
+  app.get(["/terms", "/privacy"], async (req, res) => {
+    const docs = await currentLegalDocuments(pool, { production });
+    const doc = docs[req.path.slice(1)];
+    if (!doc)
+      return res
+        .status(503)
+        .type("text")
+        .send(
+          "This policy is not published yet. Please check back before creating an account.",
+        );
+    res
+      .set("Cache-Control", "no-store")
+      .type("html")
+      .send(renderLegalPage(doc));
   });
   app.use("/api", (req, res, next) => {
     res.set("Cache-Control", "no-store");
@@ -204,6 +235,13 @@ export function createApp(
     if (result.rows[0].attempts > limit)
       fail(429, "Too many attempts. Please try again in 15 minutes.");
   }
+  app.get("/api/legal", async (req, res) =>
+    res.json({
+      documents: legalMetadata(
+        await currentLegalDocuments(pool, { production }),
+      ),
+    }),
+  );
   app.post("/api/auth/signup", async (req, res) => {
     await throttle(req, `signup:${req.ip}`, 10);
     const data = signupSchema.parse(req.body);
@@ -214,6 +252,25 @@ export function createApp(
           "INSERT INTO users(email,password_hash,adult_confirmed) VALUES($1,$2,true) RETURNING *",
           [data.email, hash],
         );
+        const docs = await currentLegalDocuments(db, { production });
+        if (!docs.terms || !docs.privacy)
+          fail(
+            503,
+            "The legal policies are not available yet. Please try again later.",
+          );
+        if (
+          data.termsVersion !== docs.terms.version ||
+          data.privacyVersion !== docs.privacy.version
+        )
+          fail(
+            409,
+            "Our policies changed. Refresh this page and review the latest versions before signing up.",
+          );
+        for (const slug of ["terms", "privacy"])
+          await db.query(
+            "INSERT INTO legal_acceptances(user_id,slug,version) VALUES($1,$2,$3)",
+            [result.rows[0].id, slug, docs[slug].version],
+          );
         await issueSession(db, req, res, result.rows[0].id, production);
         return result.rows[0];
       });

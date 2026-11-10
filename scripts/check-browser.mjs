@@ -32,6 +32,7 @@ async function signup(page, email, name) {
   await page.locator("#login-password").fill("A browser test passphrase!");
   await page.locator("#confirm-password").fill("A browser test passphrase!");
   await page.locator("#signup-adult").check();
+  await page.locator("#signup-legal").check();
   await page.locator("#auth-submit").click();
   await page.locator("#app-shell:not([hidden])").waitFor();
   await page.locator(".profile-button").click();
@@ -53,6 +54,7 @@ try {
   await organizer.locator("#login-password").fill("A browser test passphrase!");
   await organizer.locator("#confirm-password").fill("Different passphrase!");
   await organizer.locator("#signup-adult").check();
+  await organizer.locator("#signup-legal").check();
   await organizer.locator("#auth-submit").click();
   await organizer
     .getByText("Passwords do not match.", { exact: true })
@@ -161,6 +163,21 @@ try {
   );
   await mobile.screenshot({
     path: resolve("work/browser-check/discovery-mobile.png"),
+    fullPage: true,
+  });
+  const legalPage = await mobileCtx.newPage();
+  for (const path of ["/terms", "/privacy"]) {
+    await legalPage.goto(origin + path);
+    await legalPage.locator("h1").waitFor();
+    assert.equal(await legalPage.locator(".legal-draft").count(), 1);
+    assert(
+      await legalPage.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+  }
+  await legalPage.screenshot({
+    path: resolve("work/browser-check/privacy-mobile.png"),
     fullPage: true,
   });
   await member.locator(".modal-close").click();

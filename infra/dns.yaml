@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Apex-safe Route 53 alias for Tripling after its HTTPS service has been created.
+Parameters:
+  DomainName:
+    Type: String
+    Default: tripling.in
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+  ServiceStack:
+    Type: String
+    Default: tripling-service
+Resources:
+  WebsiteAlias:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName:
+          Fn::ImportValue: !Sub "${ServiceStack}-LoadBalancerDns"
+        HostedZoneId:
+          Fn::ImportValue: !Sub "${ServiceStack}-LoadBalancerZone"
+        EvaluateTargetHealth: false

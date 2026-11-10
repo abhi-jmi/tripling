@@ -15,6 +15,20 @@ Parameters:
     Type: String
     Description: Application hostname covered by the certificate; point DNS to the load balancer after deployment
     AllowedPattern: '[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}'
+  LegalOperatorName:
+    Type: String
+    Description: Public legal operator or business name
+    MinLength: 1
+    MaxLength: 200
+  LegalContactEmail:
+    Type: String
+    Description: Monitored public support and privacy email
+    AllowedPattern: '[^@\s]+@[^@\s]+\.[^@\s]+'
+  LegalJurisdiction:
+    Type: String
+    Description: Public country and state of the operator
+    MinLength: 1
+    MaxLength: 200
 Resources:
   Cluster:
     Type: AWS::ECS::Cluster
@@ -161,6 +175,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
+      Family: !Sub "${AWS::StackName}-app"
       RequiresCompatibilities: [FARGATE]
       NetworkMode: awsvpc
       Cpu: "512"
@@ -183,6 +198,14 @@ Resources:
           Environment:
             - Name: NODE_ENV
               Value: production
+            - Name: APP_VERSION
+              Value: !Ref ImageTag
+            - Name: LEGAL_OPERATOR_NAME
+              Value: !Ref LegalOperatorName
+            - Name: LEGAL_CONTACT_EMAIL
+              Value: !Ref LegalContactEmail
+            - Name: LEGAL_JURISDICTION
+              Value: !Ref LegalJurisdiction
             - Name: PORT
               Value: "3000"
             - Name: PUBLIC_ORIGIN
@@ -273,3 +296,25 @@ Outputs:
     Value: !Ref Cluster
   ServiceName:
     Value: !GetAtt Service.Name
+  ClusterArn:
+    Value: !GetAtt Cluster.Arn
+  ServiceArn:
+    Value: !Ref Service
+    Export:
+      Name: !Sub "${AWS::StackName}-ServiceArn"
+  TaskExecutionRoleArn:
+    Value: !GetAtt ExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TaskExecutionRoleArn"
+  ApplicationRoleArn:
+    Value: !GetAtt ApplicationRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ApplicationRoleArn"
+  LoadBalancerDns:
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-LoadBalancerDns"
+  LoadBalancerZone:
+    Value: !GetAtt LoadBalancer.CanonicalHostedZoneID
+    Export:
+      Name: !Sub "${AWS::StackName}-LoadBalancerZone"

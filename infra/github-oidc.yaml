@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: GitHub OIDC deployment role for Tripling application releases only; no stored AWS access keys.
+Parameters:
+  FoundationStack:
+    Type: String
+    Default: tripling-foundation
+  ServiceStack:
+    Type: String
+    Default: tripling-service
+  RepositoryOwner:
+    Type: String
+    Default: abhi-jmi
+    AllowedPattern: "[A-Za-z0-9-]+"
+  RepositoryName:
+    Type: String
+    Default: tripling
+    AllowedPattern: "[A-Za-z0-9_.-]+"
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Reuse an existing token.actions.githubusercontent.com provider in this account if present
+Conditions:
+  CreateProvider: !Equals [!Ref ExistingOidcProviderArn, ""]
+Resources:
+  GitHubProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Tripling main-branch image releases; no database-secret or infrastructure-mutation permissions
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                !If [
+                  CreateProvider,
+                  !Ref GitHubProvider,
+                  !Ref ExistingOidcProviderArn,
+                ]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${RepositoryOwner}/${RepositoryName}:ref:refs/heads/main"
+      Policies:
+        - PolicyName: ReleaseOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  [
+                    ecr:BatchCheckLayerAvailability,
+                    ecr:CompleteLayerUpload,
+                    ecr:InitiateLayerUpload,
+                    ecr:UploadLayerPart,
+                    ecr:PutImage,
+                    ecr:BatchGetImage,
+                    ecr:GetDownloadUrlForLayer,
+                    ecr:DescribeImages,
+                  ]
+                Resource:
+                  Fn::ImportValue: !Sub "${FoundationStack}-RepositoryArn"
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ServiceStack}/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${FoundationStack}/*"
+              - Effect: Allow
+                Action: [ecs:DescribeServices, ecs:UpdateService]
+                Resource:
+                  Fn::ImportValue: !Sub "${ServiceStack}-ServiceArn"
+              - Effect: Allow
+                Action: ecs:DescribeTaskDefinition
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ServiceStack}-app:*"
+              - Effect: Allow
+                Action: ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - Fn::ImportValue: !Sub "${ServiceStack}-TaskExecutionRoleArn"
+                  - Fn::ImportValue: !Sub "${ServiceStack}-ApplicationRoleArn"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+Outputs:
+  DeploymentRoleArn:
+    Value: !GetAtt DeployRole.Arn
+  GitHubSubject:
+    Value: !Sub "repo:${RepositoryOwner}/${RepositoryName}:ref:refs/heads/main"

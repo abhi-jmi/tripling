@@ -172,6 +172,11 @@ function browseGuest() {
   location.hash = "discover";
   setView("discover");
 }
+let legalVersions = null;
+async function loadLegal() {
+  const response = await api("/legal");
+  legalVersions = response.documents;
+}
 function setAuthMode(mode) {
   authMode = mode === "signup" ? "signup" : "login";
   const signup = authMode === "signup";
@@ -180,6 +185,21 @@ function setAuthMode(mode) {
   $("#confirm-password").required = signup;
   $("#signup-adult").disabled = !signup;
   $("#signup-adult").required = signup;
+  $("#signup-legal").disabled = !signup;
+  $("#signup-legal").required = signup;
+  if (signup) {
+    $("#auth-submit").disabled = true;
+    loadLegal()
+      .then(() => {
+        if (authMode === "signup") $("#auth-submit").disabled = false;
+      })
+      .catch((error) => {
+        if (authMode === "signup") {
+          $("#login-error").textContent = error.message;
+          $("#login-error").hidden = false;
+        }
+      });
+  } else $("#auth-submit").disabled = false;
   $("#login-password").minLength = signup ? 10 : 1;
   $("#login-password").autocomplete = signup
     ? "new-password"
@@ -504,6 +524,7 @@ async function review(id) {
 }
 async function endSession() {
   await auth.logout();
+  setAuthMode("login");
   data = {
     user: null,
     trips: [],
@@ -568,9 +589,23 @@ $("#login-form").addEventListener("submit", async (event) => {
   button.textContent =
     authMode === "signup" ? "Creating your account…" : "Logging in…";
   try {
-    if (authMode === "signup")
-      await auth.signup(email, password, confirm, $("#signup-adult").checked);
-    else await auth.login(email, password);
+    if (authMode === "signup") {
+      if (!legalVersions?.terms || !legalVersions?.privacy)
+        throw new Error(
+          "The legal policies are not available. Please reload this page before signing up.",
+        );
+      if (!$("#signup-legal").checked)
+        throw new Error(
+          "Review and accept the Terms and Privacy Policy before signing up.",
+        );
+      await auth.signup(
+        email,
+        password,
+        confirm,
+        $("#signup-adult").checked,
+        legalVersions,
+      );
+    } else await auth.login(email, password);
     form.reset();
     await resumeAction();
     toast(
@@ -581,6 +616,10 @@ $("#login-form").addEventListener("submit", async (event) => {
   } catch (err) {
     error.textContent = err.message;
     error.hidden = false;
+    if (err.status === 409 && authMode === "signup") {
+      $("#signup-legal").checked = false;
+      await loadLegal().catch(() => {});
+    }
   } finally {
     button.disabled = false;
     button.innerHTML = `${authMode === "signup" ? "Create account" : "Log in"} ${icon("arrow-right")}`;

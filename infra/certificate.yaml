@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DNS-validated regional certificate for the Tripling HTTPS load balancer; requires control of the hosted zone.
+Parameters:
+  DomainName:
+    Type: String
+    Default: tripling.in
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+Resources:
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+Outputs:
+  CertificateArn:
+    Value: !Ref Certificate

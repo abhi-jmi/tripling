@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createPool } from "../db.js";
 import { migrate } from "../migrate.js";
 import { createApp } from "../app.js";
+import { publishLegalDocuments, legalConfiguration } from "../legal.js";
 import { cookieOptions } from "../auth.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -19,6 +20,7 @@ const pool = await createPool({
   NODE_ENV: "test",
 });
 await migrate(pool);
+await publishLegalDocuments(pool, { NODE_ENV: "test" });
 await pool.query("TRUNCATE users,auth_rate_limits RESTART IDENTITY CASCADE");
 const app = createApp(pool, { production: false });
 const server = app.listen(0, "127.0.0.1");
@@ -45,6 +47,7 @@ class Client {
     };
   }
   async signup(email) {
+    const docs = (await this.request("/legal")).body.documents;
     const r = await this.request("/auth/signup", {
       method: "POST",
       body: {
@@ -52,6 +55,9 @@ class Client {
         password: "A long test passphrase!",
         confirmPassword: "A long test passphrase!",
         age: true,
+        acceptedLegal: true,
+        termsVersion: docs.terms.version,
+        privacyVersion: docs.privacy.version,
       },
     });
     assert.equal(r.status, 201);
@@ -108,6 +114,62 @@ const trip = {
 try {
   await test("database-backed Tripling workflows", async (t) => {
     await t.test(
+      "policy pages are public, database-backed and identify local drafts",
+      async () => {
+        const legal = await anonymous.request("/legal");
+        assert(legal.body.documents.terms.version);
+        assert(legal.body.documents.privacy.version);
+        for (const path of ["/terms", "/privacy"]) {
+          const response = await fetch(base + path);
+          assert.equal(response.status, 200);
+          const html = await response.text();
+          assert(html.includes("Draft policy"));
+          assert(html.includes("Version"));
+        }
+        assert.throws(
+          () => legalConfiguration({ NODE_ENV: "production" }),
+          /LEGAL_OPERATOR_NAME/,
+        );
+      },
+    );
+    await t.test(
+      "signup cannot bypass policy acceptance or use stale versions",
+      async () => {
+        const docs = (await anonymous.request("/legal")).body.documents;
+        const body = {
+          email: "legal-test@example.com",
+          password: "A long test passphrase!",
+          confirmPassword: "A long test passphrase!",
+          age: true,
+          acceptedLegal: false,
+          termsVersion: docs.terms.version,
+          privacyVersion: docs.privacy.version,
+        };
+        assert.equal(
+          (await anonymous.request("/auth/signup", { method: "POST", body }))
+            .status,
+          400,
+        );
+        assert.equal(
+          (
+            await anonymous.request("/auth/signup", {
+              method: "POST",
+              body: { ...body, acceptedLegal: true, termsVersion: "outdated" },
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (
+            await pool.query(
+              "SELECT id FROM users WHERE email='legal-test@example.com'",
+            )
+          ).rowCount,
+          0,
+        );
+      },
+    );
+    await t.test(
       "signup validates password confirmation and adult policy",
       async () => {
         let r = await anonymous.request("/auth/signup", {
@@ -140,6 +202,15 @@ try {
         bobUser = await bob.signup("bob@example.com");
         outsiderUser = await outsider.signup("outsider@example.com");
         assert.equal(ownerUser.email, "owner@example.com");
+        assert.equal(
+          (
+            await pool.query(
+              "SELECT * FROM legal_acceptances WHERE user_id=$1",
+              [ownerUser.id],
+            )
+          ).rowCount,
+          2,
+        );
         const session = await owner.request("/auth/session");
         assert.equal(session.body.user.id, ownerUser.id);
         const hash = await pool.query(

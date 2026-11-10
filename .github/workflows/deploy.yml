@@ -1,0 +1,88 @@
+name: Test and deploy Tripling
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tripling-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: false
+jobs:
+  test:
+    name: PostgreSQL and application checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: tripling
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: tripling_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U tripling -d tripling_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://tripling:local-test-only@localhost:5432/tripling_test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install 'cfn-lint==1.60.0'
+      - run: cfn-lint infra/*.yaml
+      - run: bash -n scripts/deploy-aws.sh scripts/deploy-release.sh
+  configuration:
+    name: Check deployment connection
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          DEPLOY_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          DEPLOY_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          if [[ -z "$DEPLOY_ROLE" || -z "$DEPLOY_REGION" ]]; then
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo '### AWS deployment is not connected' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Tests will run, but deployment is skipped until AWS_DEPLOY_ROLE_ARN and AWS_REGION repository variables are configured. See docs/aws-deployment.md for the one-time setup.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            [[ "$DEPLOY_ROLE" =~ ^arn:aws:iam::[0-9]{12}:role/.+ ]] || { echo 'Invalid AWS_DEPLOY_ROLE_ARN'; exit 1; }
+            [[ "$DEPLOY_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]] || { echo 'Invalid AWS_REGION'; exit 1; }
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          fi
+  deploy:
+    name: Release to AWS
+    needs: [test, configuration]
+    if: github.ref == 'refs/heads/main' && needs.configuration.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_SERVICE_STACK: ${{ vars.AWS_SERVICE_STACK || 'tripling-service' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: Tripling-${{ github.run_id }}
+      - run: ./scripts/deploy-release.sh

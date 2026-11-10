@@ -1,0 +1,82 @@
+{
+  "slug": "privacy",
+  "version": "2026-11-11.1",
+  "title": "Privacy Policy",
+  "effectiveOn": "2026-11-11",
+  "introduction": "This Policy explains the information Tripling processes, why it is used, who can see it, and how to contact the operator about your privacy. It describes the current service rather than features that may be added later.",
+  "sections": [
+    {
+      "heading": "1. Operator and contact",
+      "paragraphs": [
+        "{{operator}} operates Tripling in {{jurisdiction}} and is responsible for the personal information handled through this service. Send privacy, correction, access, or account-deletion requests to {{contact}}. Deployment region: {{region}}."
+      ]
+    },
+    {
+      "heading": "2. Information you provide",
+      "paragraphs": [
+        "Account records include your email address, a salted password hash, account identifier, adult confirmation, and creation date. We do not store your plaintext password.",
+        "Optional profile information includes your traveler name, city, bio, and self-declared eligibility for women-only groups. Trip records include routes, destinations, dates, budgets, group preferences, capacity, descriptions, and rules.",
+        "We also store saved trips, join-request introductions and decisions, membership records, group messages, reviews, in-app notifications, reports and hidden-trip choices, and the policy versions accepted at signup. Do not submit identity documents, exact home addresses, payment details, or sensitive information in these fields."
+      ]
+    },
+    {
+      "heading": "3. Session and security information",
+      "paragraphs": [
+        "We use a necessary session cookie to keep you logged in. It is HttpOnly and, on the production HTTPS site, Secure and SameSite=Lax. The server stores a hash of its random session token, not the token itself. Sessions expire after seven days unless ended earlier.",
+        "The browser’s sessionStorage keeps an intended in-app action so you can return to it after login. The app does not store your password or authentication token in localStorage or sessionStorage.",
+        "For login throttling and abuse protection, the server processes the request IP address and email supplied during login and stores hashed rate-limit identifiers and time-window counters. Infrastructure and security logs may contain technical request information such as IP addresses, timestamps, error codes, and service events. Application code does not deliberately log passwords, session tokens, or chat bodies."
+      ]
+    },
+    {
+      "heading": "4. Why information is used",
+      "paragraphs": [
+        "Information is used to create and protect accounts; show relevant travel plans; manage requests, memberships, chat, reviews, and notifications; record policy acceptance; investigate reports; operate and secure the service; and comply with applicable legal obligations.",
+        "Where applicable law requires a legal basis, processing may be necessary to provide the service you request, meet a legal obligation, protect legitimate interests such as security and abuse prevention, or rely on consent where required. Optional profile information is used for the choices you make in the service. We do not sell personal information or use it for advertising profiling in the current app."
+      ]
+    },
+    {
+      "heading": "5. Who can see your information",
+      "paragraphs": [
+        "Trip descriptions, routes, dates, budgets, organizer display names, and published travel reviews are public. Your account email and password hash are not included in public listings. Do not put private contact information into a public trip or review.",
+        "A join-request introduction and profile bio are shared with the organizer reviewing it. Registered group members can see the group’s member names, bios, and messages. A member who leaves loses future chat access, while their existing messages remain in the conversation.",
+        "Authorized operators and service administrators can access records needed to operate the platform, investigate reports, or respond to lawful requests. Group chat is access-controlled but is not end-to-end encrypted."
+      ]
+    },
+    {
+      "heading": "6. Hosting and external services",
+      "paragraphs": [
+        "The planned production service uses Amazon Web Services for application hosting, PostgreSQL database storage, encrypted database volumes and backups, secrets management, and operational logs. Data is hosted in the configured deployment region; AWS support and subprocessors may operate in other locations according to their terms and applicable safeguards.",
+        "The current stylesheet requests fonts from Google Fonts. Loading those fonts can disclose your IP address and browser request headers to Google. Trip photos are bundled with the application rather than fetched from an image service when you open a page. The app does not currently include advertising pixels or third-party analytics trackers.",
+        "We may disclose information when legally required or when reasonably necessary to investigate fraud, protect rights or safety, or complete a lawful change of operator with appropriate safeguards. New integrations with materially different data use should be disclosed before introduction."
+      ]
+    },
+    {
+      "heading": "7. Retention and deletion",
+      "paragraphs": [
+        "Account, trip, request, message, review, report, and notification records remain in the database while needed to provide the service, handle a complaint, maintain security, or meet applicable obligations. The current service does not automatically delete all travel records after a fixed period.",
+        "Expired session records and old throttle buckets are cleaned during service startup or maintenance. AWS application logs are configured for 30-day retention. Automated RDS backups are configured for seven days. Manually retained database snapshots can remain until the operator removes them.",
+        "Contact {{contact}} to request deletion or account closure. The operator will assess and carry out applicable requests, explain any lawful retention or technical delay, and address backup copies through the backup lifecycle. The website does not currently offer an automated account-deletion button. Removing a record from the active database does not instantly remove every backup or a copy another traveler independently saved."
+      ]
+    },
+    {
+      "heading": "8. Your choices and rights",
+      "paragraphs": [
+        "You can edit your profile, cancel a request, leave a group, hide a trip, manage saved trips, and end your login session. Public information may have been viewed or copied before you change it.",
+        "Depending on applicable law, you may have rights to access, correct, delete, obtain a copy of, object to, or restrict certain processing, withdraw consent where processing relies on it, or complain to a competent authority. Contact {{contact}} so the operator can assess the request and verify identity without asking you to publish sensitive documents in a trip or chat."
+      ]
+    },
+    {
+      "heading": "9. Security and children",
+      "paragraphs": [
+        "Production connections use HTTPS, database connections verify TLS certificates, passwords use salted scrypt hashes, and authorization checks protect account data and member-only chat. These measures reduce risk but cannot guarantee absolute security.",
+        "Tripling is for adults aged 18 or older. Age is self-confirmed, not independently verified. If you believe a child has supplied personal information, contact {{contact}} so the operator can investigate and take appropriate action."
+      ]
+    },
+    {
+      "heading": "10. Policy changes",
+      "paragraphs": [
+        "Each published Policy has a version and effective date. Signup records the version acknowledged. The operator should communicate material changes and obtain further consent where the law requires it. Earlier versions are retained for accountability. Contact {{contact}} with questions about this Policy."
+      ]
+    }
+  ]
+}

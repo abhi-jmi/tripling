@@ -4,6 +4,7 @@ Tripling is a trip-first travel companion website with a Node.js API and Postgre
 
 ## Implemented
 
+- Versioned, PostgreSQL-backed Terms and Privacy pages at `/terms` and `/privacy`, with transactional signup acknowledgments. Missing public operator/contact details keep local policies in draft and prevent production startup.
 - Email/password signup with password confirmation and adult confirmation; email/password login and logout. No email-verification step.
 - Salted scrypt password hashes, opaque server-side sessions, HttpOnly cookies, same-origin write protection, persistent login throttling, and bounded password-hashing concurrency.
 - Public trip discovery with destination, overlapping date, origin, budget, travel style, and transport filters. No sample accounts or seeded trip listings are inserted into the database.
@@ -50,7 +51,7 @@ TRIPLING_TEST_ORIGIN=http://127.0.0.1:3000 \
 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:browser
 ```
 
-These checks create two local test accounts and a trip, exercise the complete approval/chat workflow, and capture desktop/mobile screenshots in ignored `work/browser-check/`. The script refuses non-local server origins. The included GitHub Actions workflow runs the database integration checks on pushes and pull requests; it has no AWS deployment job.
+These checks create two local test accounts and a trip, exercise the complete approval/chat workflow, and capture desktop/mobile screenshots in ignored `work/browser-check/`. The script refuses non-local server origins. The GitHub Actions workflow runs database and deployment-control tests on main-branch pushes and pull requests, and deploys main to AWS only after its OIDC role and repository variables are configured.
 
 ## Database and migrations
 
@@ -62,7 +63,9 @@ The original prototype's localStorage records are not imported. This app starts 
 
 ## AWS deployment preparation
 
-**Nothing is deployed automatically. No AWS connection or resources were created for this implementation.**
+**Target: `tripling.in` in Mumbai (`ap-south-1`). AWS access and domain/operator setup are still required before the first live deployment.**
+
+See [the AWS deployment guide](docs/aws-deployment.md) for the one-time infrastructure, DNS/certificate, OIDC role, and GitHub configuration. Once configured, passing pushes to main deploy automatically. Until then the workflow explicitly reports deployment as not connected and skips AWS.
 
 The intended architecture is:
 
@@ -77,19 +80,24 @@ Browser → HTTPS Application Load Balancer → ECS Fargate frontend/API
 - `infra/foundation.yaml`: VPC, two public load-balancer subnets, two private application/database subnets, ECR repository, encrypted RDS PostgreSQL, seven-day backups, generated database credentials, private ECR/Logs/Secrets Manager endpoints, and an S3 gateway endpoint for image layers. There is no NAT gateway and no public database.
 - `infra/service.yaml`: HTTPS load balancer, ACM certificate binding, HTTP-to-HTTPS redirect, non-root Fargate container, scoped IAM roles, health checks, rolling deployments with circuit-breaker rollback, CloudWatch logs, and CPU-based scaling from one to three tasks.
 - `Dockerfile`: Node.js 22 container with production dependencies and bundled RDS trust roots. Production database connections require certificate-verified TLS. AWS credentials come from the ECS task role; the application retrieves its database secret without exposing it to the browser.
-- `scripts/deploy-aws.sh`: manual, opt-in deployment; never runs on a Git push. Images are tagged with the exact source commit and immutable in ECR.
+- `scripts/deploy-aws.sh`: initial infrastructure setup and explicit infrastructure updates.
+- `.github/workflows/deploy.yml` and `scripts/deploy-release.sh`: tested main-branch application releases using GitHub OIDC, digest-pinned images, ECS rollout verification, HTTPS smoke checks, and rollback on failure. No long-lived AWS keys are stored in GitHub.
+- `infra/github-oidc.yaml`, `infra/certificate.yaml`, and `infra/dns.yaml`: least-privilege release role, regional ACM certificate, and apex-safe Route 53 alias.
 
-When you explicitly decide to deploy later, you will need AWS CLI credentials with the necessary permissions, Docker, a domain, and an issued ACM certificate for that domain in the chosen region. Review the templates, service limits, and cost estimate in your account first. Region defaults to Mumbai (`ap-south-1`) and is configurable; no region has been provisioned.
+For the initial deployment, you need AWS CLI credentials with the necessary permissions, Docker, a domain, and an issued ACM certificate for that domain in the chosen region. Review the templates, service limits, and cost estimate in your account first. Region defaults to Mumbai (`ap-south-1`) and is configurable; no region has been provisioned.
 
 ```sh
-# Example only. Run later, after reviewing costs and connecting AWS yourself.
+# Run after connecting AWS and supplying the public operator details.
 export AWS_REGION=ap-south-1
-export TRIPLING_DOMAIN=tripling.your-domain.example
+export TRIPLING_DOMAIN=tripling.in
 export TRIPLING_CERTIFICATE_ARN='<issued ACM certificate ARN in this region>'
+export LEGAL_OPERATOR_NAME='<public operator or business name>'
+export LEGAL_CONTACT_EMAIL='<monitored public email>'
+export LEGAL_JURISDICTION='<country and state>'
 TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
 ```
 
-The script prints the load balancer DNS target. Add a DNS alias/CNAME for your hostname, then verify `/healthz` and signup/login over HTTPS. New versions are deployed by rerunning the script from a clean committed checkout. `TRIPLING_MULTI_AZ=true` enables a standby RDS instance for higher database availability. Database deletion protection is enabled; snapshots, the secret, logs, and ECR repository have retention policies.
+The script prints the load balancer DNS target. Add a DNS alias/CNAME for your hostname, then verify `/healthz` and signup/login over HTTPS. Application versions are released by GitHub Actions after setup; apply infrastructure changes using the bootstrap script from the current clean commit. `TRIPLING_MULTI_AZ=true` enables a standby RDS instance for higher database availability. Database deletion protection is enabled; snapshots, the secret, logs, and ECR repository have retention policies.
 
 AWS validation here is schema-level only. Account permissions, quotas, region-specific availability, DNS, certificate validity, and actual cloud connectivity still require testing during a future authorized deployment. This setup incurs charges for RDS, Fargate, the load balancer, private interface endpoints in both AZs, Secrets Manager, logs, storage, and image scans. Review those costs before enabling deployment.
 
@@ -104,12 +112,13 @@ AWS validation here is schema-level only. Account permissions, quotas, region-sp
 | Group                 | `GET /api/trips/:id/members`, `GET/POST /api/trips/:id/messages`                                        |
 | Trust                 | `POST /api/reports`, `GET/POST /api/trips/:id/reviews`                                                  |
 | Notifications         | `POST /api/notifications/read`                                                                          |
+| Legal                 | `GET /terms`, `GET /privacy`, `GET /api/legal`                                                          |
 | Health                | `GET /healthz`                                                                                          |
 
 Write requests require JSON and a same-origin `Origin` header. Production uses `PUBLIC_ORIGIN` and secure `__Host-` cookies. Queries are parameterized; ownership, membership, dates, capacity, and eligibility are enforced on the server.
 
 ## Remaining launch work
 
-The reporting database is implemented; a moderator console, operational review process, privacy/legal documents, password-recovery flow, and account-deletion UI are not. Gender eligibility is self-declared, not identity verification. Chat polling returns the newest 100 messages; large-scale discovery, chat pagination, automated abuse detection, and full observability/alerting need further work. The initial deployment uses one database credential for migrations and runtime; separate database roles and a credential-rotation/restart process should be established for a production operating environment. Database backup restoration should be exercised before real users depend on it.
+The reporting database is implemented; a moderator console, operational review process, password-recovery flow, and account-deletion UI are not. Terms and Privacy pages are implemented; the operator details and jurisdiction-specific legal review remain launch requirements. Gender eligibility is self-declared, not identity verification. Chat polling returns the newest 100 messages; large-scale discovery, chat pagination, automated abuse detection, and full observability/alerting need further work. The initial deployment uses one database credential for migrations and runtime; separate database roles and a credential-rotation/restart process should be established for a production operating environment. Database backup restoration should be exercised before real users depend on it.
 
 Photos: Unsplash. Fonts: DM Sans and Manrope with system fallbacks. RDS CA bundle: `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`; refresh it as part of certificate maintenance.

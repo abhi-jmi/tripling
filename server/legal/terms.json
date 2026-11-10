@@ -1,0 +1,76 @@
+{
+  "slug": "terms",
+  "version": "2026-11-11.1",
+  "title": "Terms and Conditions",
+  "effectiveOn": "2026-11-11",
+  "introduction": "These Terms govern your use of Tripling, a platform for discovering traveler-created trips and connecting with travel companions. Please read them together with our Privacy Policy.",
+  "sections": [
+    {
+      "heading": "1. Who operates Tripling",
+      "paragraphs": [
+        "Tripling is operated by {{operator}}. Contact us at {{contact}} about these Terms, your account, or a concern about the service. Our operating jurisdiction is {{jurisdiction}}."
+      ]
+    },
+    {
+      "heading": "2. Eligibility and your account",
+      "paragraphs": [
+        "You must be at least 18 years old to create an account or participate in trips. Give accurate account and trip information, keep your password confidential, and tell us if you believe your account has been misused.",
+        "Signup uses an email address and password. Email ownership, government identity, gender, travel experience, and another traveler’s reliability are not verified by the current service. Do not impersonate someone else or describe an unverified profile as verified."
+      ]
+    },
+    {
+      "heading": "3. What the platform provides",
+      "paragraphs": [
+        "Tripling lets travelers publish plans, discover trips, save listings, request to join, review requests as an organizer, and communicate in member-only group chat. Trip organizers and members arrange the actual travel between themselves.",
+        "Tripling does not currently sell transport, accommodation, tours, insurance, or travel packages, take trip payments, employ trip organizers, or act as an emergency response service. A listing is not a guarantee that a trip will happen or that its costs, availability, or conditions will stay the same."
+      ]
+    },
+    {
+      "heading": "4. Trip rules and responsibilities",
+      "paragraphs": [
+        "Check the destination, dates, estimated budget, accommodation, transport, entry requirements, health considerations, and cancellation arrangements before committing. Make bookings and payments directly with the appropriate provider after checking its terms.",
+        "Organizers decide who can join and must describe plans honestly, avoid overbooking, communicate material changes, and respect members’ boundaries. Members may cancel requests or leave groups. Leaving removes access to group chat; messages already sent remain visible to the remaining members unless removed through an applicable data request.",
+        "Women-only groups use self-declared profile eligibility. Eligibility is checked when requesting and approving membership; it is not identity verification or a safety certification. Do not misrepresent eligibility to access a restricted group.",
+        "Trip cancellation prevents new group messages and records in-app updates. Tripling does not guarantee delivery or immediate reading of notifications. Discuss changes directly with your crew and providers."
+      ]
+    },
+    {
+      "heading": "5. Safety and acceptable conduct",
+      "paragraphs": [
+        "Meet new companions in public, get to know them before booking, and share your plans with someone you trust. Do not publish a home address, identity documents, financial information, or precise live location in a trip listing or chat.",
+        "Do not harass, threaten, discriminate unlawfully, exploit, scam, spam, impersonate, post unlawful content, encourage dangerous conduct, or try to access another account or private group without permission. Respect local laws and communities.",
+        "Use the report controls to raise concerns. Reports are recorded for follow-up, but they do not provide immediate or continuous monitoring. For an emergency in India, call 112; elsewhere, contact local emergency services."
+      ]
+    },
+    {
+      "heading": "6. Content, messages, and reviews",
+      "paragraphs": [
+        "You retain ownership of content you submit. You give the operator permission to host, store, display, and process it as needed to provide and maintain Tripling, handle safety reports, and meet legal obligations. You must have the rights needed to share it.",
+        "Trip descriptions and organizer names are public. Requests are shared with their organizer, and group messages are shared with registered group members. Do not submit confidential information on behalf of someone else without permission.",
+        "Reviews are available after a trip has ended between registered members of that trip. Keep reviews honest and focused on travel behavior, communication, and reliability, rather than appearance or personal attacks. Membership records do not independently prove that travel occurred."
+      ]
+    },
+    {
+      "heading": "7. Moderation and service availability",
+      "paragraphs": [
+        "The operator may investigate reports and restrict accounts or content where reasonably necessary to address misuse, security incidents, legal requirements, or breaches of these Terms. Contact the operator to ask about a restriction or challenge a decision.",
+        "We aim to maintain the service, but interruptions, errors, data loss, and changes can occur. Do not rely on Tripling as your sole store of bookings, emergency contacts, or essential travel information. Additional product features may have separate terms that will be presented before you use them."
+      ]
+    },
+    {
+      "heading": "8. Liability and rights",
+      "paragraphs": [
+        "Travel with other people and third-party bookings involve risks outside the platform’s control. You remain responsible for decisions about companions, travel, bookings, and personal safety. The operator does not guarantee another person’s conduct or a third-party provider’s performance.",
+        "Any exclusion or limitation applies only to the extent permitted by applicable law. These Terms do not exclude non-excludable liability, statutory consumer rights, or other mandatory protections. Responsibility for a specific claim depends on the facts and applicable law."
+      ]
+    },
+    {
+      "heading": "9. Account closure, changes, and disputes",
+      "paragraphs": [
+        "You can log out at any time. Contact {{contact}} to request account closure, correction, or deletion and to raise a complaint. See the Privacy Policy for information about records, backups, and legal retention.",
+        "The operator may update these Terms as the service changes. Each published version is dated and retained, and signup records the versions accepted. Material updates affecting existing users should be communicated before applying them; continuing to hold an account alone does not replace any consent required by law.",
+        "We encourage you to contact us first to try to resolve a dispute. Applicable law and competent courts determine the available rights and remedies; nothing here removes mandatory rights to complain to a regulator or use a legally available forum."
+      ]
+    }
+  ]
+}

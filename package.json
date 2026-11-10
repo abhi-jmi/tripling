@@ -11,7 +11,7 @@
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "migrate": "node --env-file-if-exists=.env server/migrate-cli.js",
     "test": "node --test server/test/*.test.js",
-    "check": "node --check server/app.js && node --check server/index.js && node --check dist/app.js && node --check dist/auth.js",
+    "check": "node --check server/app.js && node --check server/index.js && node --check dist/app.js && node --check dist/auth.js && node --check server/legal.js && node --check scripts/smoke-deployment.mjs",
     "test:browser": "node scripts/check-browser.mjs"
   },
   "dependencies": {

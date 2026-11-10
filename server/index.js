@@ -1,12 +1,21 @@
 import { createPool } from "./db.js";
 import { migrate } from "./migrate.js";
+import { publishLegalDocuments, legalConfiguration } from "./legal.js";
 import { createApp } from "./app.js";
+legalConfiguration();
 const pool = await createPool();
 await migrate(pool);
+await publishLegalDocuments(pool);
 const server = createApp(pool).listen(
   Number(process.env.PORT) || 3000,
   "0.0.0.0",
-  () => console.log("Tripling is ready."),
+  (error) => {
+    if (error) {
+      console.error("Server startup failed:", error.code || error.name);
+      process.exit(1);
+    }
+    console.log("Tripling is ready.");
+  },
 );
 let stopping = false;
 function shutdown() {

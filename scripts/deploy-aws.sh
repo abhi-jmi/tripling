@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# This is a manual deployment tool. Nothing runs merely by pushing source.
+# One-time infrastructure/bootstrap or explicit infrastructure updates; CI handles later application releases.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ ${TRIPLING_DEPLOY_APPROVED:-} != yes ]]; then
@@ -7,6 +7,9 @@ if [[ ${TRIPLING_DEPLOY_APPROVED:-} != yes ]]; then
   exit 1
 fi
 region=${AWS_REGION:-ap-south-1}
+: "${LEGAL_OPERATOR_NAME:?Provide the public operator or business name.}"
+: "${LEGAL_CONTACT_EMAIL:?Provide the public support/privacy email.}"
+: "${LEGAL_JURISDICTION:?Provide the operator country/state.}"
 foundation=${TRIPLING_FOUNDATION_STACK:-tripling-foundation}
 service=${TRIPLING_SERVICE_STACK:-tripling-service}
 : "${TRIPLING_CERTIFICATE_ARN:?Provide an issued ACM certificate ARN in the deployment region.}"
@@ -26,6 +29,6 @@ if ! aws ecr describe-images --region "$region" --repository-name "$repository_n
   docker build "${build_args[@]}" .
   docker push "$repository:$image_tag"
 fi
-aws cloudformation deploy --template-file infra/service.yaml --stack-name "$service" --region "$region" --capabilities CAPABILITY_IAM --parameter-overrides FoundationStack="$foundation" ImageTag="$image_tag" CertificateArn="$TRIPLING_CERTIFICATE_ARN" DomainName="$TRIPLING_DOMAIN" --no-fail-on-empty-changeset
+aws cloudformation deploy --template-file infra/service.yaml --stack-name "$service" --region "$region" --capabilities CAPABILITY_IAM --parameter-overrides FoundationStack="$foundation" ImageTag="$image_tag" CertificateArn="$TRIPLING_CERTIFICATE_ARN" DomainName="$TRIPLING_DOMAIN" "LegalOperatorName=$LEGAL_OPERATOR_NAME" "LegalContactEmail=$LEGAL_CONTACT_EMAIL" "LegalJurisdiction=$LEGAL_JURISDICTION" --no-fail-on-empty-changeset
 aws cloudformation describe-stacks --stack-name "$service" --region "$region" --query "Stacks[0].Outputs" --output table
 echo 'Finish DNS setup using DnsTarget, then verify /healthz and signup/login over HTTPS.'

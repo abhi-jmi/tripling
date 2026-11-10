@@ -75,10 +75,18 @@
       });
       user = result.user;
     },
-    async signup(email, password, confirmPassword, age) {
+    async signup(email, password, confirmPassword, age, legal) {
       const result = await api("/auth/signup", {
         method: "POST",
-        body: { email, password, confirmPassword, age },
+        body: {
+          email,
+          password,
+          confirmPassword,
+          age,
+          acceptedLegal: true,
+          termsVersion: legal.terms.version,
+          privacyVersion: legal.privacy.version,
+        },
       });
       user = result.user;
     },
