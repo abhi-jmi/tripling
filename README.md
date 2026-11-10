@@ -4,7 +4,7 @@ Tripling is a trip-first travel companion website with a Node.js API and Postgre
 
 ## Implemented
 
-- Versioned, PostgreSQL-backed Terms and Privacy pages at `/terms` and `/privacy`, with transactional signup acknowledgments. Missing public operator/contact details keep local policies in draft and prevent production startup.
+- Versioned, PostgreSQL-backed Terms and Privacy pages at `/terms` and `/privacy`, with transactional signup acknowledgments. Public operator details are configured as Tripling, abhishek@tripling.in, and Chandigarh/India; invalid production policy configuration is rejected.
 - Email/password signup with password confirmation and adult confirmation; email/password login and logout. No email-verification step.
 - Salted scrypt password hashes, opaque server-side sessions, HttpOnly cookies, same-origin write protection, persistent login throttling, and bounded password-hashing concurrency.
 - Public trip discovery with destination, overlapping date, origin, budget, travel style, and transport filters. No sample accounts or seeded trip listings are inserted into the database.
@@ -63,7 +63,7 @@ The original prototype's localStorage records are not imported. This app starts 
 
 ## AWS deployment preparation
 
-**Target: `tripling.in` in Mumbai (`ap-south-1`). AWS access and domain/operator setup are still required before the first live deployment.**
+**Target: `tripling.in` in Mumbai (`ap-south-1`). The target AWS account is `669991883783` and DNS is at Hostinger. Authenticated AWS access and DNS/certificate setup are still required before the first live deployment.**
 
 See [the AWS deployment guide](docs/aws-deployment.md) for the one-time infrastructure, DNS/certificate, OIDC role, and GitHub configuration. Once configured, passing pushes to main deploy automatically. Until then the workflow explicitly reports deployment as not connected and skips AWS.
 
@@ -91,7 +91,7 @@ For the initial deployment, you need AWS CLI credentials with the necessary perm
 export AWS_REGION=ap-south-1
 export TRIPLING_DOMAIN=tripling.in
 export TRIPLING_CERTIFICATE_ARN='<issued ACM certificate ARN in this region>'
-export LEGAL_OPERATOR_NAME='<public operator or business name>'
+export LEGAL_OPERATOR_NAME=Tripling
 export LEGAL_CONTACT_EMAIL=abhishek@tripling.in
 export LEGAL_JURISDICTION="Chandigarh, India"
 TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
@@ -119,6 +119,6 @@ Write requests require JSON and a same-origin `Origin` header. Production uses `
 
 ## Remaining launch work
 
-The reporting database is implemented; a moderator console, operational review process, password-recovery flow, and account-deletion UI are not. Terms and Privacy pages are implemented; the operator details and jurisdiction-specific legal review remain launch requirements. Gender eligibility is self-declared, not identity verification. Chat polling returns the newest 100 messages; large-scale discovery, chat pagination, automated abuse detection, and full observability/alerting need further work. The initial deployment uses one database credential for migrations and runtime; separate database roles and a credential-rotation/restart process should be established for a production operating environment. Database backup restoration should be exercised before real users depend on it.
+The reporting database is implemented; a moderator console, operational review process, password-recovery flow, and account-deletion UI are not. Terms and Privacy pages are implemented; the supplied operator details are configured, and jurisdiction-specific legal review remains an operating responsibility. Gender eligibility is self-declared, not identity verification. Chat polling returns the newest 100 messages; large-scale discovery, chat pagination, automated abuse detection, and full observability/alerting need further work. The initial deployment uses one database credential for migrations and runtime; separate database roles and a credential-rotation/restart process should be established for a production operating environment. Database backup restoration should be exercised before real users depend on it.
 
 Photos: Unsplash. Fonts: DM Sans and Manrope with system fallbacks. RDS CA bundle: `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`; refresh it as part of certificate maintenance.

@@ -53,6 +53,7 @@ jobs:
         env:
           DEPLOY_ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           DEPLOY_REGION: ${{ vars.AWS_REGION }}
+          EXPECTED_ACCOUNT: "669991883783"
         run: |
           if [[ -z "$DEPLOY_ROLE" || -z "$DEPLOY_REGION" ]]; then
             echo 'configured=false' >> "$GITHUB_OUTPUT"
@@ -61,6 +62,7 @@ jobs:
           else
             [[ "$DEPLOY_ROLE" =~ ^arn:aws:iam::[0-9]{12}:role/.+ ]] || { echo 'Invalid AWS_DEPLOY_ROLE_ARN'; exit 1; }
             [[ "$DEPLOY_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]] || { echo 'Invalid AWS_REGION'; exit 1; }
+            [[ "$DEPLOY_ROLE" == arn:aws:iam::${EXPECTED_ACCOUNT}:role/* ]] || { echo 'Role must belong to AWS account 669991883783'; exit 1; }
             echo 'configured=true' >> "$GITHUB_OUTPUT"
           fi
   deploy:
@@ -73,6 +75,7 @@ jobs:
       contents: read
       id-token: write
     env:
+      AWS_ACCOUNT_ID: "669991883783"
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_SERVICE_STACK: ${{ vars.AWS_SERVICE_STACK || 'tripling-service' }}
     steps:

@@ -1,0 +1,13 @@
+{
+  "awsAccountId": "669991883783",
+  "awsDeploymentRegion": "ap-south-1",
+  "domain": "tripling.in",
+  "dnsProvider": "Hostinger",
+  "operatorName": "Tripling",
+  "publicContactEmail": "abhishek@tripling.in",
+  "legalJurisdiction": "Chandigarh, India",
+  "authenticationMethod": "IAM Identity Center / SSO",
+  "ssoStartUrl": null,
+  "ssoRegion": null,
+  "deploymentStatus": "Awaiting authenticated AWS access"
+}

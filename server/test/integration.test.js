@@ -20,8 +20,13 @@ const pool = await createPool({
   NODE_ENV: "test",
 });
 await migrate(pool);
-await publishLegalDocuments(pool, { NODE_ENV: "test" });
-await pool.query("TRUNCATE users,auth_rate_limits RESTART IDENTITY CASCADE");
+await pool.query(
+  "TRUNCATE users,auth_rate_limits,legal_documents RESTART IDENTITY CASCADE",
+);
+await publishLegalDocuments(pool, {
+  NODE_ENV: "test",
+  LEGAL_OPERATOR_NAME: " ",
+});
 const app = createApp(pool, { production: false });
 const server = app.listen(0, "127.0.0.1");
 await new Promise((resolve) => server.once("listening", resolve));
@@ -127,7 +132,11 @@ try {
           assert(html.includes("Version"));
         }
         assert.throws(
-          () => legalConfiguration({ NODE_ENV: "production" }),
+          () =>
+            legalConfiguration({
+              NODE_ENV: "production",
+              LEGAL_OPERATOR_NAME: " ",
+            }),
           /LEGAL_OPERATOR_NAME/,
         );
       },

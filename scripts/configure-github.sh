@@ -3,6 +3,8 @@
 set -euo pipefail
 : "${AWS_DEPLOY_ROLE_ARN:?Provide DeploymentRoleArn from the GitHub OIDC stack.}"
 [[ $AWS_DEPLOY_ROLE_ARN =~ ^arn:aws:iam::[0-9]{12}:role/.+ ]] || { echo 'Invalid deployment role ARN.' >&2;exit 1; }
+expected_account="${TRIPLING_AWS_ACCOUNT_ID:-669991883783}"
+[[ $AWS_DEPLOY_ROLE_ARN == arn:aws:iam::${expected_account}:role/* ]] || { echo 'Deployment role is in the wrong AWS account.' >&2;exit 1; }
 repo=${TRIPLING_GITHUB_REPO:-abhi-jmi/tripling}
 command -v gh >/dev/null || { echo 'Install and authenticate GitHub CLI first.' >&2;exit 1; }
 gh variable set AWS_REGION --repo "$repo" --body "${AWS_REGION:-ap-south-1}"

@@ -169,7 +169,10 @@ try {
   for (const path of ["/terms", "/privacy"]) {
     await legalPage.goto(origin + path);
     await legalPage.locator("h1").waitFor();
-    assert.equal(await legalPage.locator(".legal-draft").count(), 1);
+    assert.equal(await legalPage.locator(".legal-draft").count(), 0);
+    await legalPage
+      .getByText("Contact the operator", { exact: true })
+      .waitFor();
     assert(
       await legalPage.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

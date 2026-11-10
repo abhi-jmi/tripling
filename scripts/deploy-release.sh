@@ -9,6 +9,9 @@ release_sha=${GITHUB_SHA:-$(git rev-parse HEAD)}
 [[ $(git rev-parse HEAD) == "$release_sha" ]] || { echo 'Checkout does not match the requested release.' >&2; exit 1; }
 [[ -z $(git status --porcelain) ]] || { echo 'Release checkout must be clean.' >&2; exit 1; }
 for tool in aws docker jq; do command -v "$tool" >/dev/null || { echo "Missing $tool." >&2; exit 1; }; done
+expected_account="${AWS_ACCOUNT_ID:-669991883783}"
+actual_account=$(aws sts get-caller-identity --query Account --output text --region "$AWS_REGION")
+[[ "$actual_account" == "$expected_account" ]] || { echo "AWS account mismatch: expected $expected_account, received $actual_account." >&2; exit 1; }
 release_tmp=$(mktemp -d)
 trap 'rm -rf "$release_tmp"' EXIT
 aws cloudformation describe-stacks --stack-name "$service_stack" --region "$AWS_REGION" --output json > "$release_tmp/stack.json"

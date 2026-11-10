@@ -27,7 +27,8 @@ async function releaseFixture(mode) {
   const aws = `#!${process.execPath}
 const fs=require('node:fs'),p=require('node:path');const args=process.argv.slice(2),dir=process.env.MOCK_LOG_DIR;const get=k=>args[args.indexOf(k)+1];const operation=args.slice(0,2).join(' ');fs.appendFileSync(p.join(dir,'calls'),operation+'\\n');const old=${JSON.stringify(oldTask)},next=${JSON.stringify(newTask)},mode=process.env.MOCK_MODE;
 const output=v=>process.stdout.write(typeof v==='string'?v:JSON.stringify(v));
-if(operation==='cloudformation describe-stacks'){
+if(operation==='sts get-caller-identity')output(mode==='wrong-account'?'999999999999':'123456789012');
+else if(operation==='cloudformation describe-stacks'){
  const foundation=get('--stack-name')==='tripling-foundation';
  output({Stacks:[{Parameters:[{ParameterKey:'FoundationStack',ParameterValue:'tripling-foundation'}],Outputs:(foundation?{RepositoryUri:'123456789012.dkr.ecr.ap-south-1.amazonaws.com/tripling'}:{ClusterArn:'arn:aws:ecs:ap-south-1:123456789012:cluster/tripling',ServiceArn:'arn:aws:ecs:ap-south-1:123456789012:service/tripling/app',WebsiteUrl:'https://tripling.in'}),}].map(stack=>({...stack,Outputs:Object.entries(stack.Outputs).map(([OutputKey,OutputValue])=>({OutputKey,OutputValue}))}))});
 }else if(operation==='ecr get-login-password')output('mock-password');
@@ -78,6 +79,7 @@ else if(operation==='ecs wait'){
       MOCK_LOG_DIR: join(directory, "log"),
       MOCK_MODE: mode,
       AWS_REGION: "ap-south-1",
+      AWS_ACCOUNT_ID: "123456789012",
       GITHUB_SHA: sha,
       GITHUB_STEP_SUMMARY: join(directory, "log", "summary"),
     },
@@ -98,6 +100,7 @@ else if(operation==='ecs wait'){
 for (const [mode, success] of [
   ["success", true],
   ["denied", false],
+  ["wrong-account", false],
   ["wait-failure", false],
   ["smoke-failure", false],
 ]) {
@@ -106,7 +109,7 @@ for (const [mode, success] of [
     try {
       assert.equal(f.result.status, success ? 0 : 1, f.result.stderr);
       const calls = await f.read("calls");
-      if (mode === "denied") {
+      if (mode === "denied" || mode === "wrong-account") {
         assert(!calls.includes("docker build"));
         assert(!calls.includes("ecs update-service"));
         return;

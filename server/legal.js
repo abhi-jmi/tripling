@@ -11,7 +11,7 @@ const escape = (value) =>
       ],
   );
 export function legalConfiguration(env = process.env) {
-  const operator = (env.LEGAL_OPERATOR_NAME || "").trim();
+  const operator = (env.LEGAL_OPERATOR_NAME || "Tripling").trim();
   const contact = (env.LEGAL_CONTACT_EMAIL || "abhishek@tripling.in").trim();
   const jurisdiction = (env.LEGAL_JURISDICTION || "Chandigarh, India").trim();
   const published =

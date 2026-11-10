@@ -17,6 +17,7 @@ Parameters:
     AllowedPattern: '[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}'
   LegalOperatorName:
     Type: String
+    Default: Tripling
     Description: Public legal operator or business name
     MinLength: 1
     MaxLength: 200

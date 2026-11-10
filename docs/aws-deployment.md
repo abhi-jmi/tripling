@@ -1,6 +1,6 @@
 # Deploy Tripling to AWS and connect GitHub
 
-Target requested by the owner: **tripling.in**, **Mumbai (`ap-south-1`)**. These are configuration targets, not evidence that the domain has been connected or a deployment exists.
+Target requested by the owner: **AWS account `669991883783`**, **tripling.in**, **Mumbai (`ap-south-1`)**, with DNS at **Hostinger**. These are configuration targets, not evidence that the domain has been connected or a deployment exists.
 
 The app serves its frontend, authentication API, database-backed legal pages, and other API routes from ECS Fargate behind one HTTPS origin. RDS PostgreSQL is private. The GitHub deployment job releases the full application container; it does not deploy a static-only copy.
 
@@ -8,7 +8,7 @@ The app serves its frontend, authentication API, database-backed legal pages, an
 
 1. Connect AWS credentials through the execution environment's secure settings or use an authenticated local AWS CLI. Never commit keys or put them in chat. Initial bootstrap needs CloudFormation, VPC, IAM, ECR, ECS, RDS, Secrets Manager, logs, certificate and (if used) Route 53 permissions. The later pipeline role is much narrower.
 2. Confirm control of `tripling.in` and its DNS. No existing domain records should be replaced until ownership and the intended target have been checked.
-3. Supply the public operator/business name. The owner has supplied `abhishek@tripling.in` as the public support/privacy email and selected India/Chandigarh jurisdiction in the supplied Terms; these now have configured defaults. Production startup refuses missing details; it will not publish placeholder legal pages. Legal text should be checked for the actual operator and operating countries before launch.
+3. The public operator name is configured as **Tripling**. The owner has supplied `abhishek@tripling.in` as the public support/privacy email and selected India/Chandigarh jurisdiction in the supplied Terms; these now have configured defaults. Production startup refuses missing details; it will not publish placeholder legal pages. Legal text should be checked for the actual operator and operating countries before launch.
 4. Review the infrastructure and account costs. This provisions billable Fargate tasks, a load balancer, RDS, private AWS service endpoints in two AZs, secrets, logs and storage. The templates default to one application task (scalable to three), 0.5 vCPU/1 GB each, a `db.t4g.micro` PostgreSQL database, and seven-day automated backups. RDS Multi-AZ is configurable. This is an initial production deployment configuration, not a guarantee of high availability or legal compliance.
 
 ## First deployment (one time, with an authorized AWS identity)
@@ -36,7 +36,7 @@ If DNS is elsewhere, request a regional ACM certificate for `tripling.in`, add t
 ### B. Database, network, and HTTPS service
 
 ```sh
-export LEGAL_OPERATOR_NAME='<public operator or business name>'
+export LEGAL_OPERATOR_NAME=Tripling
 export LEGAL_CONTACT_EMAIL=abhishek@tripling.in
 export LEGAL_JURISDICTION="Chandigarh, India"
 TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
@@ -124,3 +124,9 @@ Policy text lives in `server/legal/*.json` and is inserted into PostgreSQL as im
 Application releases update ECS task revisions directly, while the infrastructure remains managed by CloudFormation. For infrastructure or public operator-detail changes, apply the service template from the current clean commit using `scripts/deploy-aws.sh`, then run the same smoke checks. Be aware that infrastructure changes can update the ECS task definition too; do not blindly reapply an old checkout.
 
 Keep database restore tests, patching, secret rotation, account recovery/deletion operations, moderation, legal review and incident response in the operating plan. Actual AWS deployment and live verification are only complete after the account, DNS, certificate, operator details and pipeline variables have been connected and the verification steps succeed.
+
+## Account and Hostinger handoff
+
+Both the bootstrap and release scripts check the authenticated AWS account before resource changes. The configured target is `669991883783`; the GitHub role must belong to that account. The application region stays Mumbai even if the console is currently open in Sydney. Identity Center's region is separate and has not been established by the supplied console URL.
+
+See [Hostinger DNS handoff](hostinger-dns.md) for certificate validation and preserving the existing email records. Because authoritative DNS is at Hostinger, do not run the Route 53 certificate or alias templates unless DNS management has intentionally been moved to Route 53. The Hostinger DNS step requires the actual ACM-generated validation record and the final load-balancer target; neither should be guessed.

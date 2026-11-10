@@ -7,17 +7,22 @@ if [[ ${TRIPLING_DEPLOY_APPROVED:-} != yes ]]; then
   exit 1
 fi
 region=${AWS_REGION:-ap-south-1}
-: "${LEGAL_OPERATOR_NAME:?Provide the public operator or business name.}"
+export LEGAL_OPERATOR_NAME="${LEGAL_OPERATOR_NAME:-Tripling}"
+expected_account="${TRIPLING_AWS_ACCOUNT_ID:-669991883783}"
 export LEGAL_CONTACT_EMAIL="${LEGAL_CONTACT_EMAIL:-abhishek@tripling.in}"
 export LEGAL_JURISDICTION="${LEGAL_JURISDICTION:-Chandigarh, India}"
 foundation=${TRIPLING_FOUNDATION_STACK:-tripling-foundation}
 service=${TRIPLING_SERVICE_STACK:-tripling-service}
 : "${TRIPLING_CERTIFICATE_ARN:?Provide an issued ACM certificate ARN in the deployment region.}"
-: "${TRIPLING_DOMAIN:?Provide the hostname covered by that certificate.}"
+export TRIPLING_DOMAIN="${TRIPLING_DOMAIN:-tripling.in}"
 for tool in aws docker git; do command -v "$tool" >/dev/null || { echo "Install $tool first." >&2; exit 1; }; done
 if [[ -n $(git status --porcelain) ]]; then echo 'Commit all changes before deployment so image tags identify exact source.' >&2; exit 1; fi
 image_tag=$(git rev-parse HEAD)
-aws sts get-caller-identity --query Account --output text --region "$region"
+actual_account=$(aws sts get-caller-identity --query Account --output text --region "$region")
+if [[ "$actual_account" != "$expected_account" ]]; then
+  echo "Refusing deployment: signed in to AWS account $actual_account; expected $expected_account." >&2
+  exit 1
+fi
 aws cloudformation deploy --template-file infra/foundation.yaml --stack-name "$foundation" --region "$region" --parameter-overrides MultiAZ="${TRIPLING_MULTI_AZ:-false}" --no-fail-on-empty-changeset
 repository=$(aws cloudformation describe-stacks --stack-name "$foundation" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue | [0]" --output text)
 registry=${repository%%/*}

@@ -11,4 +11,4 @@ The website templates follow the supplied structure and use the supplied date, c
 - Zero-liability, automatic intermediary immunity/DPDP-compliance assertions, absolute non-refund rules, unrestricted law-enforcement disclosure, and unconditional jurisdiction/termination provisions are qualified by applicable law and mandatory rights.
 - Current service has no fees or payments. Future fees/refund terms must be disclosed before payment.
 
-These edits update policy content, not implement ID verification, payments, or an automatic account-deletion feature. The public operator/business name still needs to be configured before production publication. New content produces new immutable database policy versions on application startup; existing acceptance records are retained.
+These edits update policy content, not implement ID verification, payments, or an automatic account-deletion feature. The owner subsequently supplied Tripling as the public operator name, which is now configured along with the supplied email and jurisdiction. New content produces new immutable database policy versions on application startup; existing acceptance records are retained.
