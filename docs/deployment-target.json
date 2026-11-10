@@ -1,6 +1,6 @@
 {
   "awsAccountId": "669991883783",
-  "awsDeploymentRegion": "ap-south-1",
+  "awsDeploymentRegion": "ap-southeast-2",
   "domain": "tripling.in",
   "dnsProvider": "Hostinger",
   "operatorName": "Tripling",
@@ -9,5 +9,6 @@
   "authenticationMethod": "IAM Identity Center / SSO",
   "ssoStartUrl": null,
   "ssoRegion": null,
-  "deploymentStatus": "Awaiting authenticated AWS access"
+  "deploymentStatus": "Certificate reported ISSUED by owner; foundation/service creation not yet confirmed",
+  "certificateArn": "arn:aws:acm:ap-southeast-2:669991883783:certificate/0d55419d-b822-4fb9-9643-f8426199f20b"
 }

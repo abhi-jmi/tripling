@@ -7,7 +7,7 @@ expected_account="${TRIPLING_AWS_ACCOUNT_ID:-669991883783}"
 [[ $AWS_DEPLOY_ROLE_ARN == arn:aws:iam::${expected_account}:role/* ]] || { echo 'Deployment role is in the wrong AWS account.' >&2;exit 1; }
 repo=${TRIPLING_GITHUB_REPO:-abhi-jmi/tripling}
 command -v gh >/dev/null || { echo 'Install and authenticate GitHub CLI first.' >&2;exit 1; }
-gh variable set AWS_REGION --repo "$repo" --body "${AWS_REGION:-ap-south-1}"
+gh variable set AWS_REGION --repo "$repo" --body "${AWS_REGION:-ap-southeast-2}"
 gh variable set AWS_SERVICE_STACK --repo "$repo" --body "${AWS_SERVICE_STACK:-tripling-service}"
 gh variable set AWS_DEPLOY_ROLE_ARN --repo "$repo" --body "$AWS_DEPLOY_ROLE_ARN"
 echo 'Repository deployment variables configured. Run the main-branch Test and deploy Tripling workflow when ready.'

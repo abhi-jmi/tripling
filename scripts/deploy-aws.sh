@@ -6,7 +6,7 @@ if [[ ${TRIPLING_DEPLOY_APPROVED:-} != yes ]]; then
   echo 'This creates billable AWS resources. Review infra/ and set TRIPLING_DEPLOY_APPROVED=yes only when ready.' >&2
   exit 1
 fi
-region=${AWS_REGION:-ap-south-1}
+region=${AWS_REGION:-ap-southeast-2}
 export LEGAL_OPERATOR_NAME="${LEGAL_OPERATOR_NAME:-Tripling}"
 expected_account="${TRIPLING_AWS_ACCOUNT_ID:-669991883783}"
 export LEGAL_CONTACT_EMAIL="${LEGAL_CONTACT_EMAIL:-abhishek@tripling.in}"

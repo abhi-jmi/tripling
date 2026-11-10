@@ -10,7 +10,7 @@ These are observations, not records to blindly recreate later. Refresh the curre
 
 ## Certificate validation
 
-Once authenticated to AWS account `669991883783`, request an ACM public certificate for `tripling.in` in **Mumbai (`ap-south-1`)** using DNS validation. For Hostinger-managed DNS, use ACM's external-DNS validation flow rather than the Route 53 certificate template. Add the exact validation CNAME name and value from ACM to Hostinger's DNS editor. Leave that validation record in place for renewal.
+Once authenticated to AWS account `669991883783`, request an ACM public certificate for `tripling.in` in **Sydney (`ap-southeast-2`)** using DNS validation. For Hostinger-managed DNS, use ACM's external-DNS validation flow rather than the Route 53 certificate template. Add the exact validation CNAME name and value from ACM to Hostinger's DNS editor. Leave that validation record in place for renewal.
 
 Do not guess the ACM validation record; AWS generates it after the certificate request. Wait until the certificate is `ISSUED` before creating the HTTPS service.
 
@@ -24,4 +24,4 @@ Preserve the Hostinger MX and mail-related records so `abhishek@tripling.in` con
 
 ## Authentication detail still needed
 
-The console URL supplied by the owner opens the account's console in Sydney. It does not establish an SSO session here or identify the SSO start URL. Identity Center's own region may differ from both the console's selected region and Mumbai. The AWS access-portal/start URL and Identity Center region are needed before the SSO authorization flow can begin. Do not store passwords, MFA codes, or access tokens in this document or the repository.
+The console URL supplied by the owner opens the account's console in Sydney. It does not establish an SSO session here or identify the SSO start URL. Identity Center's own region may differ from both the console's selected region and Sydney. The AWS access-portal/start URL and Identity Center region are needed before the SSO authorization flow can begin. Do not store passwords, MFA codes, or access tokens in this document or the repository.

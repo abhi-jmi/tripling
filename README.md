@@ -63,7 +63,7 @@ The original prototype's localStorage records are not imported. This app starts 
 
 ## AWS deployment preparation
 
-**Target: `tripling.in` in Mumbai (`ap-south-1`). The target AWS account is `669991883783` and DNS is at Hostinger. Authenticated AWS access and DNS/certificate setup are still required before the first live deployment.**
+**Target: `tripling.in` in Sydney (`ap-southeast-2`). The target AWS account is `669991883783` and DNS is at Hostinger. Authenticated AWS access and DNS/certificate setup are still required before the first live deployment.**
 
 See [the AWS deployment guide](docs/aws-deployment.md) for the one-time infrastructure, DNS/certificate, OIDC role, and GitHub configuration. Once configured, passing pushes to main deploy automatically. Until then the workflow explicitly reports deployment as not connected and skips AWS.
 
@@ -84,11 +84,11 @@ Browser → HTTPS Application Load Balancer → ECS Fargate frontend/API
 - `.github/workflows/deploy.yml` and `scripts/deploy-release.sh`: tested main-branch application releases using GitHub OIDC, digest-pinned images, ECS rollout verification, HTTPS smoke checks, and rollback on failure. No long-lived AWS keys are stored in GitHub.
 - `infra/github-oidc.yaml`, `infra/certificate.yaml`, and `infra/dns.yaml`: least-privilege release role, regional ACM certificate, and apex-safe Route 53 alias.
 
-For the initial deployment, you need AWS CLI credentials with the necessary permissions, Docker, a domain, and an issued ACM certificate for that domain in the chosen region. Review the templates, service limits, and cost estimate in your account first. Region defaults to Mumbai (`ap-south-1`) and is configurable; no region has been provisioned.
+For the initial deployment, you need AWS CLI credentials with the necessary permissions, Docker, a domain, and an issued ACM certificate for that domain in the chosen region. Review the templates, service limits, and cost estimate in your account first. Region defaults to Sydney (`ap-southeast-2`) and is configurable; no region has been provisioned.
 
 ```sh
 # Run after connecting AWS and supplying the public operator details.
-export AWS_REGION=ap-south-1
+export AWS_REGION=ap-southeast-2
 export TRIPLING_DOMAIN=tripling.in
 export TRIPLING_CERTIFICATE_ARN='<issued ACM certificate ARN in this region>'
 export LEGAL_OPERATOR_NAME=Tripling

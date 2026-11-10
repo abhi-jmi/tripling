@@ -1,6 +1,6 @@
 # Deploy Tripling to AWS and connect GitHub
 
-Target requested by the owner: **AWS account `669991883783`**, **tripling.in**, **Mumbai (`ap-south-1`)**, with DNS at **Hostinger**. These are configuration targets, not evidence that the domain has been connected or a deployment exists.
+Target requested by the owner: **AWS account `669991883783`**, **tripling.in**, **Sydney (`ap-southeast-2`)**, with DNS at **Hostinger**. These are configuration targets, not evidence that the domain has been connected or a deployment exists.
 
 The app serves its frontend, authentication API, database-backed legal pages, and other API routes from ECS Fargate behind one HTTPS origin. RDS PostgreSQL is private. The GitHub deployment job releases the full application container; it does not deploy a static-only copy.
 
@@ -20,7 +20,7 @@ Use a clean checkout of `main`. The steps below create actual resources; they ha
 If `tripling.in` uses a public Route 53 hosted zone in this account:
 
 ```sh
-export AWS_REGION=ap-south-1
+export AWS_REGION=ap-southeast-2
 export TRIPLING_DOMAIN=tripling.in
 export TRIPLING_HOSTED_ZONE_ID='<existing public hosted-zone ID>'
 aws cloudformation deploy --region "$AWS_REGION" \
@@ -31,7 +31,7 @@ export TRIPLING_CERTIFICATE_ARN="$(aws cloudformation describe-stacks \
   --query "Stacks[0].Outputs[?OutputKey=='CertificateArn'].OutputValue | [0]" --output text)"
 ```
 
-If DNS is elsewhere, request a regional ACM certificate for `tripling.in`, add the validation CNAME at the actual DNS provider, and wait until ACM reports `ISSUED`. Set `TRIPLING_CERTIFICATE_ARN` to that certificate. Keep the validation record for renewal. An existing certificate is reusable if it covers the hostname and is in Mumbai.
+If DNS is elsewhere, request a regional ACM certificate for `tripling.in`, add the validation CNAME at the actual DNS provider, and wait until ACM reports `ISSUED`. Set `TRIPLING_CERTIFICATE_ARN` to that certificate. Keep the validation record for renewal. An existing certificate is reusable if it covers the hostname and is in Sydney.
 
 ### B. Database, network, and HTTPS service
 
@@ -94,7 +94,7 @@ In GitHub → repository **Settings → Secrets and variables → Actions → Va
 | Variable              | Value                                         |
 | --------------------- | --------------------------------------------- |
 | `AWS_DEPLOY_ROLE_ARN` | `DeploymentRoleArn` from the OIDC stack       |
-| `AWS_REGION`          | `ap-south-1`                                  |
+| `AWS_REGION`          | `ap-southeast-2`                                  |
 | `AWS_SERVICE_STACK`   | `tripling-service` (or the actual stack name) |
 
 These values are identifiers, not AWS secret keys. With an already authenticated GitHub CLI, `./scripts/configure-github.sh` can set them instead. No `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` repository secret is needed.
@@ -127,6 +127,12 @@ Keep database restore tests, patching, secret rotation, account recovery/deletio
 
 ## Account and Hostinger handoff
 
-Both the bootstrap and release scripts check the authenticated AWS account before resource changes. The configured target is `669991883783`; the GitHub role must belong to that account. The application region stays Mumbai even if the console is currently open in Sydney. Identity Center's region is separate and has not been established by the supplied console URL.
+Both the bootstrap and release scripts check the authenticated AWS account before resource changes. The configured target is `669991883783`; the GitHub role must belong to that account. The application region is now Sydney, following the successful certificate request there; the earlier Mumbai requests were denied. Identity Center's region is separate and has not been established by the supplied console URL.
 
 See [Hostinger DNS handoff](hostinger-dns.md) for certificate validation and preserving the existing email records. Because authoritative DNS is at Hostinger, do not run the Route 53 certificate or alias templates unless DNS management has intentionally been moved to Route 53. The Hostinger DNS step requires the actual ACM-generated validation record and the final load-balancer target; neither should be guessed.
+
+## Create the foundation while ACM is validating
+
+The foundation stack does not depend on the domain certificate. From the cloned repository in the authorized CloudShell, run `AWS_REGION=ap-southeast-2 TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-foundation.sh`. This creates billable RDS/database, network, endpoint and image-repository resources. It does not yet publish the HTTPS website. Creation permissions have not been established merely by a successful stack-read or certificate request. If creation fails, inspect the CloudFormation events before retrying.
+
+The requested ACM certificate is `arn:aws:acm:ap-southeast-2:669991883783:certificate/0d55419d-b822-4fb9-9643-f8426199f20b`. Its validation CNAME has been observed publicly with the expected value, and the owner has reported ACM status ISSUED. Recheck the certificate status if deployment is delayed. The private database and application must use this same deployment region.
