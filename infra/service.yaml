@@ -22,10 +22,12 @@ Parameters:
     MaxLength: 200
   LegalContactEmail:
     Type: String
+    Default: abhishek@tripling.in
     Description: Monitored public support and privacy email
     AllowedPattern: '[^@\s]+@[^@\s]+\.[^@\s]+'
   LegalJurisdiction:
     Type: String
+    Default: Chandigarh, India
     Description: Public country and state of the operator
     MinLength: 1
     MaxLength: 200

@@ -8,7 +8,7 @@ The app serves its frontend, authentication API, database-backed legal pages, an
 
 1. Connect AWS credentials through the execution environment's secure settings or use an authenticated local AWS CLI. Never commit keys or put them in chat. Initial bootstrap needs CloudFormation, VPC, IAM, ECR, ECS, RDS, Secrets Manager, logs, certificate and (if used) Route 53 permissions. The later pipeline role is much narrower.
 2. Confirm control of `tripling.in` and its DNS. No existing domain records should be replaced until ownership and the intended target have been checked.
-3. Supply the public operator/business name, monitored support/privacy email, and operator country/state. Production startup refuses missing details; it will not publish placeholder legal pages. Legal text should be checked for the actual operator and operating countries before launch.
+3. Supply the public operator/business name. The owner has supplied `abhishek@tripling.in` as the public support/privacy email and selected India/Chandigarh jurisdiction in the supplied Terms; these now have configured defaults. Production startup refuses missing details; it will not publish placeholder legal pages. Legal text should be checked for the actual operator and operating countries before launch.
 4. Review the infrastructure and account costs. This provisions billable Fargate tasks, a load balancer, RDS, private AWS service endpoints in two AZs, secrets, logs and storage. The templates default to one application task (scalable to three), 0.5 vCPU/1 GB each, a `db.t4g.micro` PostgreSQL database, and seven-day automated backups. RDS Multi-AZ is configurable. This is an initial production deployment configuration, not a guarantee of high availability or legal compliance.
 
 ## First deployment (one time, with an authorized AWS identity)
@@ -37,8 +37,8 @@ If DNS is elsewhere, request a regional ACM certificate for `tripling.in`, add t
 
 ```sh
 export LEGAL_OPERATOR_NAME='<public operator or business name>'
-export LEGAL_CONTACT_EMAIL='<monitored public support/privacy email>'
-export LEGAL_JURISDICTION='<operator country and state>'
+export LEGAL_CONTACT_EMAIL=abhishek@tripling.in
+export LEGAL_JURISDICTION="Chandigarh, India"
 TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
 ```
 

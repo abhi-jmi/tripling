@@ -8,8 +8,8 @@ if [[ ${TRIPLING_DEPLOY_APPROVED:-} != yes ]]; then
 fi
 region=${AWS_REGION:-ap-south-1}
 : "${LEGAL_OPERATOR_NAME:?Provide the public operator or business name.}"
-: "${LEGAL_CONTACT_EMAIL:?Provide the public support/privacy email.}"
-: "${LEGAL_JURISDICTION:?Provide the operator country/state.}"
+export LEGAL_CONTACT_EMAIL="${LEGAL_CONTACT_EMAIL:-abhishek@tripling.in}"
+export LEGAL_JURISDICTION="${LEGAL_JURISDICTION:-Chandigarh, India}"
 foundation=${TRIPLING_FOUNDATION_STACK:-tripling-foundation}
 service=${TRIPLING_SERVICE_STACK:-tripling-service}
 : "${TRIPLING_CERTIFICATE_ARN:?Provide an issued ACM certificate ARN in the deployment region.}"

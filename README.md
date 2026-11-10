@@ -92,8 +92,8 @@ export AWS_REGION=ap-south-1
 export TRIPLING_DOMAIN=tripling.in
 export TRIPLING_CERTIFICATE_ARN='<issued ACM certificate ARN in this region>'
 export LEGAL_OPERATOR_NAME='<public operator or business name>'
-export LEGAL_CONTACT_EMAIL='<monitored public email>'
-export LEGAL_JURISDICTION='<country and state>'
+export LEGAL_CONTACT_EMAIL=abhishek@tripling.in
+export LEGAL_JURISDICTION="Chandigarh, India"
 TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
 ```
 

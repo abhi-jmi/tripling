@@ -1,0 +1,65 @@
+TERMS AND CONDITIONS
+Last Updated: November 10, 2026
+Welcome to [Insert Your Website/Platform Name] (hereinafter referred to as the "Platform", "we", "us", or "our").
+Please read these Terms and Conditions ("Terms") carefully before using our website or mobile application. By registering on, accessing, or using the Platform, you ("User", "you", "your") agree to be legally bound by these Terms. If you do not agree to these Terms, you must immediately cease using the Platform.
+
+
+
+1. NATURE OF SERVICE & ZERO LIABILITY
+1.1. Peer-to-Peer Intermediary Only: The Platform functions solely as a venue and an online directory to allow independent individuals to post travel plans and connect with potential travel companions. We are an intermediary platform under Section 79 of the Information Technology Act, 2000 (India).
+1.2. Not a Travel Agency or Transport Provider: We do not operate, control, provide, or manage transport services, vehicles, carpooling services, tour operations, or tour guiding. We do not act as an agent, broker, or partner for any User.
+1.3. Total Limitation of Liability: To the maximum extent permitted by applicable law, the Platform, its founders, owners, and operators shall NOT be liable for any direct, indirect, incidental, special, consequential, or exemplary damages, including but not limited to:
+* Physical injury, illness, medical emergencies, or death occurring during, before, or after travel.
+* Theft, loss of personal property, baggage, or financial fraud committed by a travel companion.
+* Vehicle accidents, delays, cancellations, or changes in travel itineraries.
+* Emotional distress, harassment, disputes, or arguments between Users.
+* Any illegal or unauthorized activity undertaken by any User.
+
+
+
+2. USER ELIGIBILITY & ACCOUNTS
+2.1. Age Restriction: You must be at least eighteen (18) years of age to register an account and use this Platform. By registering, you warrant that you are of legal age.
+2.2. Account Security: You are responsible for maintaining the confidentiality of your account credentials. All activities under your account are your sole responsibility.
+
+
+
+3. IDENTITY & GOVERNMENT ID VERIFICATION DISCLAIMER
+3.1. Voluntary/Mandatory Verification: The Platform provides a feature allowing Users to upload Government-issued Identity Documentation (e.g., Aadhaar Card, Driving License, Passport, Voter ID) to obtain a verification badge.
+3.2. No Guarantee of Safety: The verification process utilizes automated third-party KYC tools to cross-reference data. A "Verified" badge only signifies that the name matched the provided document. It is NOTan endorsement, background check, or certification of a User’s character, safety, trustworthiness, or sanity.
+3.3. User Discretion Compulsory: You are strictly advised to perform your own background checks, verify the identity documents of your companion independently in person, and meet in public spaces before initiating travel. You travel with any companion at your own exclusive risk.
+
+
+
+4. DATA PRIVACY & COMPLIANCE (DPDP ACT)
+4.1. Data Processing Consent: By uploading your Government ID, you explicitly consent to the collection, verification, and temporary processing of your sensitive data through authorized third-party KYC verification APIs.
+4.2. Data Security: We employ encryption standards to protect your documents. Government ID files are masked and handled in accordance with the Digital Personal Data Protection (DPDP) Act, 2023. We do not share your full raw identity documents with other Users.
+4.4. Law Enforcement: We reserve the right to share your verification details, IP address, and chat logs with law enforcement authorities without prior notice to you in the event of an investigation, illegal activity, or report of misconduct.
+
+
+
+5. FEES, TRANSACTIONS, & REFUNDS
+5.1. Platform/Access Fee: While the service may initially be provided free of charge, the Platform reserves the absolute right to introduce a nominal access or registration fee (e.g., ₹10 or any other specified amount) at any time.
+5.2. No Commercial Travel Fees: This nominal fee is strictly an administrative fee for platform maintenance and identity verification. It is NOT a payment for travel services.
+5.3. No Refunds: All payments made to the Platform are entirely non-refundable, regardless of whether you find a suitable travel companion or whether your scheduled trip is cancelled.
+5.4. No Financial Transactions Between Users: The Platform does not facilitate payments between Users for fuel sharing, tolls, or expenses. Any financial arrangements made between companions are strictly private, and the Platform shall not be involved in any financial disputes.
+
+
+
+6. PROHIBITED CONDUCT
+You agree not to use the Platform to:
+* Post fake, fraudulent, misleading, or criminal travel itineraries.
+* Harass, stalk, abuse, or intimidate other Users, or discriminate based on gender, religion, race, or caste.
+* Use the platform for commercial operations, commercial taxi services, prostitution, or human trafficking.
+* Spam or harvest user contact information.
+* Upload malware, viruses, or disruptive code.
+
+
+
+7. RIGHT TO TERMINATE & MODIFICATION
+7.1. Account Suspension: We reserve the unilateral right to suspend, restrict, or permanently delete any User profile without prior notice and without assigning any reason, particularly upon receiving safety complaints from other Users.
+7.2. Changes to Terms: We reserve the right to amend these Terms at any time. Continued use of the Platform after changes are published constitutes absolute acceptance of the revised Terms.
+
+
+
+8. GOVERNING LAW & JURISDICTION
+These Terms shall be governed by and construed in accordance with the laws of India. Any legal dispute, claim, or litigation arising out of or in connection with the Platform shall be subject to the exclusive jurisdiction of the courts located in Chandigarh, India.
