@@ -1,0 +1,12 @@
+# Only application runtime files enter the image/build context.
+**
+!package.json
+!package-lock.json
+!server
+!server/**
+server/test
+server/test/**
+!dist
+!dist/**
+!certs
+!certs/**

@@ -1,0 +1,623 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createPool } from "../db.js";
+import { migrate } from "../migrate.js";
+import { createApp } from "../app.js";
+import { cookieOptions } from "../auth.js";
+
+const connectionString = process.env.TEST_DATABASE_URL;
+if (!connectionString)
+  throw new Error(
+    "Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test.",
+  );
+if (!new URL(connectionString).pathname.endsWith("_test"))
+  throw new Error(
+    "Refusing to reset a database whose name does not end in _test.",
+  );
+const pool = await createPool({
+  DATABASE_URL: connectionString,
+  NODE_ENV: "test",
+});
+await migrate(pool);
+await pool.query("TRUNCATE users,auth_rate_limits RESTART IDENTITY CASCADE");
+const app = createApp(pool, { production: false });
+const server = app.listen(0, "127.0.0.1");
+await new Promise((resolve) => server.once("listening", resolve));
+const base = `http://127.0.0.1:${server.address().port}`;
+class Client {
+  cookie = "";
+  async request(path, { method = "GET", body, origin = base } = {}) {
+    const response = await fetch(base + "/api" + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(origin ? { Origin: origin } : {}),
+        ...(this.cookie ? { Cookie: this.cookie } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (response.headers.get("set-cookie"))
+      this.cookie = response.headers.get("set-cookie").split(";")[0];
+    return {
+      status: response.status,
+      body: await response.json(),
+      headers: response.headers,
+    };
+  }
+  async signup(email) {
+    const r = await this.request("/auth/signup", {
+      method: "POST",
+      body: {
+        email,
+        password: "A long test passphrase!",
+        confirmPassword: "A long test passphrase!",
+        age: true,
+      },
+    });
+    assert.equal(r.status, 201);
+    return r.body.user;
+  }
+  async profile(name, gender = "other") {
+    const r = await this.request("/profile", {
+      method: "PUT",
+      body: {
+        name,
+        city: "Delhi",
+        gender,
+        bio: "Easygoing traveler",
+        age: true,
+      },
+    });
+    assert.equal(r.status, 200);
+    return r.body.user;
+  }
+}
+const anonymous = new Client(),
+  owner = new Client(),
+  alice = new Client(),
+  bob = new Client(),
+  outsider = new Client();
+let ownerUser,
+  aliceUser,
+  bobUser,
+  outsiderUser,
+  tripId,
+  womenTripId,
+  accepted,
+  acceptedUser,
+  rejected,
+  rejectedUser;
+const trip = {
+  title: "A mountain weekend",
+  from: "Delhi",
+  destination: "Manali",
+  start: "2099-11-20",
+  end: "2099-11-23",
+  min: 5000,
+  max: 8000,
+  going: 1,
+  seats: 1,
+  category: "Mountains",
+  mode: "Bus",
+  women: false,
+  description: "A relaxed mountain weekend with a small group of travelers.",
+  plan: "Explore local paths and meet in a public café.",
+  rules: "Respect personal boundaries.",
+  age: true,
+};
+try {
+  await test("database-backed Tripling workflows", async (t) => {
+    await t.test(
+      "signup validates password confirmation and adult policy",
+      async () => {
+        let r = await anonymous.request("/auth/signup", {
+          method: "POST",
+          body: {
+            email: "bad@example.com",
+            password: "long-enough-password",
+            confirmPassword: "different",
+            age: true,
+          },
+        });
+        assert.equal(r.status, 400);
+        r = await anonymous.request("/auth/signup", {
+          method: "POST",
+          body: {
+            email: "bad@example.com",
+            password: "long-enough-password",
+            confirmPassword: "long-enough-password",
+            age: false,
+          },
+        });
+        assert.equal(r.status, 400);
+      },
+    );
+    await t.test(
+      "signup creates real accounts and a protected cookie",
+      async () => {
+        ownerUser = await owner.signup("OWNER@example.com");
+        aliceUser = await alice.signup("alice@example.com");
+        bobUser = await bob.signup("bob@example.com");
+        outsiderUser = await outsider.signup("outsider@example.com");
+        assert.equal(ownerUser.email, "owner@example.com");
+        const session = await owner.request("/auth/session");
+        assert.equal(session.body.user.id, ownerUser.id);
+        const hash = await pool.query(
+          "SELECT password_hash FROM users WHERE id=$1",
+          [ownerUser.id],
+        );
+        assert.match(hash.rows[0].password_hash, /^scrypt-v1\$/);
+        assert.notEqual(hash.rows[0].password_hash, "A long test passphrase!");
+        const tokens = await pool.query(
+          "SELECT token_hash FROM sessions WHERE user_id=$1",
+          [ownerUser.id],
+        );
+        assert.notEqual(tokens.rows[0].token_hash, owner.cookie.split("=")[1]);
+        assert.equal(cookieOptions(true).secure, true);
+        assert.equal(cookieOptions(true).httpOnly, true);
+      },
+    );
+    await t.test(
+      "login rejects a wrong password and rotates the server session",
+      async () => {
+        const client = new Client();
+        let r = await client.request("/auth/login", {
+          method: "POST",
+          body: { email: "owner@example.com", password: "wrong-password" },
+        });
+        assert.equal(r.status, 401);
+        r = await owner.request("/auth/login", {
+          method: "POST",
+          body: {
+            email: "owner@example.com",
+            password: "A long test passphrase!",
+          },
+        });
+        assert.equal(r.status, 200);
+        assert.match(r.headers.get("set-cookie"), /HttpOnly/);
+        assert.match(r.headers.get("set-cookie"), /SameSite=Lax/);
+        const rows = await pool.query(
+          "SELECT * FROM sessions WHERE user_id=$1",
+          [ownerUser.id],
+        );
+        assert.equal(rows.rowCount, 1);
+      },
+    );
+    await t.test(
+      "unsafe requests require the same origin and JSON",
+      async () => {
+        const r = await owner.request("/profile", {
+          method: "PUT",
+          origin: "https://untrusted.example",
+          body: {},
+        });
+        assert.equal(r.status, 403);
+        const missing = await owner.request("/auth/logout", {
+          method: "POST",
+          origin: null,
+          body: {},
+        });
+        assert.equal(missing.status, 403);
+      },
+    );
+    await t.test("profiles are stored in PostgreSQL", async () => {
+      await owner.profile("Organizer", "woman");
+      await alice.profile("Alice", "woman");
+      await bob.profile("Bob", "other");
+      await outsider.profile("Outsider", "other");
+      const rows = await pool.query(
+        "SELECT display_name FROM users WHERE id=$1",
+        [ownerUser.id],
+      );
+      assert.equal(rows.rows[0].display_name, "Organizer");
+    });
+    await t.test("anonymous users cannot mutate records", async () => {
+      const r = await anonymous.request("/trips", {
+        method: "POST",
+        body: trip,
+      });
+      assert.equal(r.status, 401);
+    });
+    await t.test("creating a trip inserts organizer membership", async () => {
+      const r = await owner.request("/trips", { method: "POST", body: trip });
+      assert.equal(r.status, 201);
+      tripId = r.body.id;
+      const members = await pool.query(
+        "SELECT * FROM trip_members WHERE trip_id=$1",
+        [tripId],
+      );
+      assert.equal(members.rowCount, 1);
+      const publicFeed = await anonymous.request("/bootstrap");
+      assert.equal(publicFeed.body.trips.length, 1);
+      assert.equal(publicFeed.body.trips[0].start, trip.start);
+      assert.equal(publicFeed.body.trips[0].seats, 1);
+      assert(!JSON.stringify(publicFeed.body).includes("owner@example.com"));
+    });
+    await t.test("trip validation is enforced on the server", async () => {
+      const r = await owner.request("/trips", {
+        method: "POST",
+        body: { ...trip, max: 1 },
+      });
+      assert.equal(r.status, 400);
+      const old = await owner.request("/trips", {
+        method: "POST",
+        body: { ...trip, start: "2020-01-01", end: "2020-01-02" },
+      });
+      assert.equal(old.status, 400);
+    });
+    await t.test("saved trips are idempotent and private", async () => {
+      for (let i = 0; i < 2; i++)
+        assert.equal(
+          (
+            await alice.request(`/trips/${tripId}/save`, {
+              method: "PUT",
+              body: { saved: true },
+            })
+          ).status,
+          200,
+        );
+      const mine = await alice.request("/bootstrap"),
+        theirs = await bob.request("/bootstrap");
+      assert.deepEqual(mine.body.saved, [tripId]);
+      assert.deepEqual(theirs.body.saved, []);
+    });
+    await t.test(
+      "pending travelers cannot read or write group chat",
+      async () => {
+        for (const c of [alice, bob])
+          assert.equal(
+            (
+              await c.request(`/trips/${tripId}/requests`, {
+                method: "POST",
+                body: { note: "I would love to join this mountain trip." },
+              })
+            ).status,
+            201,
+          );
+        assert.equal(
+          (await alice.request(`/trips/${tripId}/messages`)).status,
+          403,
+        );
+        assert.equal(
+          (
+            await alice.request(`/trips/${tripId}/messages`, {
+              method: "POST",
+              body: { body: "Not accepted yet" },
+            })
+          ).status,
+          403,
+        );
+      },
+    );
+    await t.test("only the organizer can approve a request", async () => {
+      const r = await outsider.request(
+        `/trips/${tripId}/requests/${aliceUser.id}`,
+        { method: "PUT", body: { status: "accepted" } },
+      );
+      assert.equal(r.status, 403);
+    });
+    await t.test(
+      "concurrent approvals cannot overbook the last spot",
+      async () => {
+        const results = await Promise.all(
+          [aliceUser, bobUser].map((u) =>
+            owner.request(`/trips/${tripId}/requests/${u.id}`, {
+              method: "PUT",
+              body: { status: "accepted" },
+            }),
+          ),
+        );
+        assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+        const aliceAccepted = results[0].status === 200;
+        accepted = aliceAccepted ? alice : bob;
+        acceptedUser = aliceAccepted ? aliceUser : bobUser;
+        rejected = aliceAccepted ? bob : alice;
+        rejectedUser = aliceAccepted ? bobUser : aliceUser;
+        const members = await pool.query(
+          "SELECT * FROM trip_members WHERE trip_id=$1",
+          [tripId],
+        );
+        assert.equal(members.rowCount, 2);
+        const feed = await owner.request("/bootstrap");
+        assert.equal(feed.body.trips.find((t) => t.id === tripId).seats, 0);
+      },
+    );
+    await t.test(
+      "approved chat messages are shared and outsiders stay excluded",
+      async () => {
+        const r = await accepted.request(`/trips/${tripId}/messages`, {
+          method: "POST",
+          body: { body: "Let’s meet at the public bus station." },
+        });
+        assert.equal(r.status, 201);
+        const messages = await owner.request(`/trips/${tripId}/messages`);
+        assert.equal(
+          messages.body.messages[0].body,
+          "Let’s meet at the public bus station.",
+        );
+        assert.equal(
+          (await outsider.request(`/trips/${tripId}/members`)).status,
+          403,
+        );
+      },
+    );
+    await t.test(
+      "rejection, acceptance notifications, and read status persist",
+      async () => {
+        assert.equal(
+          (
+            await owner.request(
+              `/trips/${tripId}/requests/${rejectedUser.id}`,
+              { method: "PUT", body: { status: "rejected" } },
+            )
+          ).status,
+          200,
+        );
+        const feed = await accepted.request("/bootstrap");
+        assert(
+          feed.body.notifications.some((n) => n.body.includes("accepted")),
+        );
+        await accepted.request("/notifications/read", {
+          method: "POST",
+          body: {},
+        });
+        const read = await accepted.request("/bootstrap");
+        assert(read.body.notifications.every((n) => n.read_at));
+      },
+    );
+    await t.test(
+      "hiding a joined trip preserves the ability to leave it",
+      async () => {
+        assert.equal(
+          (
+            await accepted.request("/reports", {
+              method: "POST",
+              body: {
+                tripId,
+                reason: "I do not want to see this trip",
+                note: "",
+              },
+            })
+          ).status,
+          201,
+        );
+        const feed = await accepted.request("/bootstrap");
+        assert(feed.body.hidden.includes(tripId));
+        assert(feed.body.trips.some((trip) => trip.id === tripId));
+      },
+    );
+    await t.test(
+      "leaving a group revokes chat access and restores capacity",
+      async () => {
+        assert.equal(
+          (
+            await accepted.request(`/trips/${tripId}/requests`, {
+              method: "DELETE",
+              body: {},
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await accepted.request(`/trips/${tripId}/messages`)).status,
+          403,
+        );
+        const feed = await owner.request("/bootstrap");
+        assert.equal(feed.body.trips.find((t) => t.id === tripId).seats, 1);
+      },
+    );
+    await t.test(
+      "women-only membership is checked on server at request and approval",
+      async () => {
+        const r = await owner.request("/trips", {
+          method: "POST",
+          body: { ...trip, title: "Women-only mountain trip", women: true },
+        });
+        womenTripId = r.body.id;
+        assert.equal(r.status, 201);
+        assert.equal(
+          (
+            await bob.request(`/trips/${womenTripId}/requests`, {
+              method: "POST",
+              body: { note: "A valid introduction for this trip." },
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await alice.request(`/trips/${womenTripId}/requests`, {
+              method: "POST",
+              body: { note: "A valid introduction for this trip." },
+            })
+          ).status,
+          201,
+        );
+        await alice.profile("Alice", "other");
+        assert.equal(
+          (
+            await owner.request(
+              `/trips/${womenTripId}/requests/${aliceUser.id}`,
+              { method: "PUT", body: { status: "accepted" } },
+            )
+          ).status,
+          403,
+        );
+        await alice.profile("Alice", "woman");
+        assert.equal(
+          (
+            await owner.request(
+              `/trips/${womenTripId}/requests/${aliceUser.id}`,
+              { method: "PUT", body: { status: "accepted" } },
+            )
+          ).status,
+          200,
+        );
+      },
+    );
+    await t.test(
+      "reviews require completed trips and real shared membership",
+      async () => {
+        const early = await alice.request(`/trips/${womenTripId}/reviews`, {
+          method: "POST",
+          body: {
+            travelerId: ownerUser.id,
+            rating: 5,
+            body: "Reliable and respectful travel companion.",
+          },
+        });
+        assert.equal(early.status, 400);
+        await pool.query(
+          "UPDATE trips SET starts_on='2020-01-01',ends_on='2020-01-03' WHERE id=$1",
+          [womenTripId],
+        );
+        const r = await alice.request(`/trips/${womenTripId}/reviews`, {
+          method: "POST",
+          body: {
+            travelerId: ownerUser.id,
+            rating: 5,
+            body: "Reliable and respectful travel companion.",
+          },
+        });
+        assert.equal(r.status, 201);
+        const outside = await outsider.request(
+          `/trips/${womenTripId}/reviews`,
+          {
+            method: "POST",
+            body: {
+              travelerId: ownerUser.id,
+              rating: 1,
+              body: "I did not travel on this trip.",
+            },
+          },
+        );
+        assert.equal(outside.status, 403);
+        assert.equal(
+          (await anonymous.request(`/trips/${womenTripId}/reviews`)).body
+            .reviews.length,
+          1,
+        );
+      },
+    );
+    await t.test("reports and hidden trips are stored per user", async () => {
+      const r = await outsider.request("/reports", {
+        method: "POST",
+        body: {
+          tripId,
+          reason: "Safety concern",
+          note: "Please review the trip description.",
+        },
+      });
+      assert.equal(r.status, 201);
+      const feed = await outsider.request("/bootstrap");
+      assert(!feed.body.trips.some((t) => t.id === tripId));
+      assert.equal(
+        (
+          await pool.query("SELECT * FROM reports WHERE reporter_id=$1", [
+            outsiderUser.id,
+          ])
+        ).rowCount,
+        1,
+      );
+      assert(
+        (await owner.request("/bootstrap")).body.trips.some(
+          (t) => t.id === tripId,
+        ),
+      );
+    });
+    await t.test(
+      "only owners can cancel; canceled groups are read-only",
+      async () => {
+        assert.equal(
+          (
+            await bob.request(`/trips/${tripId}/cancel`, {
+              method: "POST",
+              body: {},
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.request(`/trips/${tripId}/cancel`, {
+              method: "POST",
+              body: {},
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await owner.request(`/trips/${tripId}/messages`, {
+              method: "POST",
+              body: { body: "Cannot write after cancel" },
+            })
+          ).status,
+          409,
+        );
+      },
+    );
+    await t.test(
+      "data survives app restart; logout revokes sessions, not data",
+      async () => {
+        const second = createApp(pool, { production: false }).listen(
+          0,
+          "127.0.0.1",
+        );
+        await new Promise((r) => second.once("listening", r));
+        const r = await fetch(
+          `http://127.0.0.1:${second.address().port}/api/bootstrap`,
+          { headers: { Cookie: alice.cookie } },
+        );
+        assert((await r.json()).saved.includes(tripId));
+        await new Promise((r) => second.close(r));
+        const cookie = alice.cookie;
+        assert.equal(
+          (await alice.request("/auth/logout", { method: "POST", body: {} }))
+            .status,
+          200,
+        );
+        alice.cookie = cookie;
+        assert.equal((await alice.request("/auth/session")).body.user, null);
+        assert.equal(
+          (
+            await pool.query("SELECT * FROM saved_trips WHERE user_id=$1", [
+              aliceUser.id,
+            ])
+          ).rowCount,
+          1,
+        );
+      },
+    );
+    await t.test(
+      "database rate limits reject repeated bad logins",
+      async () => {
+        const client = new Client();
+        let r;
+        for (let i = 0; i < 11; i++)
+          r = await client.request("/auth/login", {
+            method: "POST",
+            body: { email: "missing@example.com", password: "wrong-password" },
+          });
+        assert.equal(r.status, 429);
+      },
+    );
+    await t.test(
+      "migration reruns are safe and production TLS is mandatory",
+      async () => {
+        await migrate(pool);
+        await assert.rejects(
+          () =>
+            createPool({
+              DATABASE_URL: connectionString,
+              NODE_ENV: "production",
+            }),
+          /DB_SSL_CA/,
+        );
+      },
+    );
+  });
+} finally {
+  await new Promise((r) => server.close(r));
+  await pool.end();
+}

@@ -1,56 +1,91 @@
-/* UI-only preview sessions. This is not email verification or a security boundary. */
+/* Account sessions live in an HttpOnly server cookie. Passwords/tokens are never stored here. */
 (() => {
-  'use strict';
-  const SESSION_KEY = 'tripling-preview-session-v1';
-  const INTENT_KEY = 'tripling-preview-intent-v1';
-  const SESSION_MS = 8 * 60 * 60 * 1000;
-  const allowedActions = new Set(['view', 'save', 'join', 'create', 'profile', 'report']);
-  const validEmail = value => {
-    if (typeof value !== 'string' || value.length > 254) return false;
-    const parts = value.split('@');
-    if (parts.length !== 2 || !parts[0] || parts[0].length > 64 || parts[0].startsWith('.') || parts[0].endsWith('.') || parts[0].includes('..')) return false;
-    if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(parts[0])) return false;
-    const labels = parts[1].split('.');
-    return labels.length >= 2 && labels.every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)) && /^[a-z]{2,63}$/i.test(labels.at(-1));
-  };
-  let current = null;
-  let intent = null;
+  let user = null;
+  let pending = null;
+  const allowed = new Set([
+    "view",
+    "save",
+    "join",
+    "create",
+    "profile",
+    "report",
+    "notifications",
+    "chat",
+  ]);
   try {
-    const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY));
-    if (saved && validEmail(saved.email) && /^[a-f0-9-]{36}$/.test(saved.id) && Number.isFinite(saved.expiresAt) && saved.expiresAt > Date.now()) current = saved;
-    else sessionStorage.removeItem(SESSION_KEY);
-    const pending = JSON.parse(sessionStorage.getItem(INTENT_KEY));
-    if (pending && allowedActions.has(pending.type)) intent = pending;
-  } catch { /* In-memory sessions still work when browser storage is disabled. */ }
-  function write(key, value) {
-    try { if (value) sessionStorage.setItem(key, JSON.stringify(value)); else sessionStorage.removeItem(key); } catch {}
+    const action = JSON.parse(sessionStorage.getItem("tripling-return"));
+    if (action && allowed.has(action.type)) pending = action;
+  } catch {}
+  async function api(path, options = {}) {
+    let response;
+    try {
+      response = await fetch(`/api${path}`, {
+        ...options,
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...options.headers },
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+    } catch {
+      throw new Error(
+        "Cannot reach Tripling. Check your connection and try again.",
+      );
+    }
+    const body = await response
+      .json()
+      .catch(() => ({ error: "The server returned an unexpected response." }));
+    if (!response.ok) {
+      const error = new Error(
+        body.error || "The request could not be completed.",
+      );
+      error.status = response.status;
+      if (response.status === 401) user = null;
+      throw error;
+    }
+    return body;
   }
   window.TriplingAuth = {
+    api,
     get session() {
-      if (current && current.expiresAt <= Date.now()) { current = null; write(SESSION_KEY, null); }
-      return current;
+      return user;
     },
-    get storageKey() { return this.session ? `tripling-preview-data-${current.id}` : null; },
-    validEmail,
-    start(email) {
-      email = String(email).trim().toLowerCase();
-      if (!validEmail(email)) throw new Error('Enter a valid email address, such as you@example.com.');
-      current = { email, id: crypto.randomUUID(), expiresAt: Date.now() + SESSION_MS };
-      write(SESSION_KEY, current);
-      return current;
+    setUser(value) {
+      user = value;
+    },
+    get pending() {
+      return pending;
     },
     remember(action) {
-      intent = action && allowedActions.has(action.type) ? action : null;
-      write(INTENT_KEY, intent);
+      pending = action && allowed.has(action.type) ? action : null;
+      try {
+        if (pending)
+          sessionStorage.setItem("tripling-return", JSON.stringify(pending));
+        else sessionStorage.removeItem("tripling-return");
+      } catch {}
     },
-    get pending() { return intent; },
-    consume() { const pending = intent; intent = null; write(INTENT_KEY, null); return pending; },
-    end() {
-      // Remove this preview's local records on sign-out; never expose them to the next session.
-      const key = this.storageKey;
-      if (key) { try { localStorage.removeItem(key); } catch {} }
-      current = null; intent = null;
-      write(SESSION_KEY, null); write(INTENT_KEY, null);
-    }
+    consume() {
+      const value = pending;
+      this.remember(null);
+      return value;
+    },
+    async login(email, password) {
+      const result = await api("/auth/login", {
+        method: "POST",
+        body: { email, password },
+      });
+      user = result.user;
+    },
+    async signup(email, password, confirmPassword, age) {
+      const result = await api("/auth/signup", {
+        method: "POST",
+        body: { email, password, confirmPassword, age },
+      });
+      user = result.user;
+    },
+    async logout() {
+      await api("/auth/logout", { method: "POST", body: {} });
+      user = null;
+      this.remember(null);
+    },
   };
 })();

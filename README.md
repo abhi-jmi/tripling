@@ -1,29 +1,115 @@
 # Tripling
 
-A responsive, trip-first travel companion discovery website based on the Travel Companion App Product Plan.
+Tripling is a trip-first travel companion website with a Node.js API and PostgreSQL database. The frontend and API run from the same server so account sessions work without cross-origin configuration.
 
-## This implementation
-- Destination, starting-city, and overlapping-date search
-- Travel style, women-only, budget, and transport filters; sorting
-- Trip details, sample itineraries, estimated budgets, and ground rules
-- Saved trips, local traveler profile, create/delete trip, and local join/cancel requests
-- Women-only request eligibility checks using an explicitly self-declared demo profile
-- Safety guidance and local report/hide controls
-- Responsive layouts, keyboard-accessible dialogs, and reduced-motion support
+## Implemented
 
-This is a browser prototype. Existing listings, hosts, and compatibility scores are illustrative. Data persists in localStorage on the current browser only. There is no real authentication, verification, live moderation, host approval, messaging, or booking. Never use this preview to arrange actual travel.
+- Email/password signup with password confirmation and adult confirmation; email/password login and logout. No email-verification step.
+- Salted scrypt password hashes, opaque server-side sessions, HttpOnly cookies, same-origin write protection, persistent login throttling, and bounded password-hashing concurrency.
+- Public trip discovery with destination, overlapping date, origin, budget, travel style, and transport filters. No sample accounts or seeded trip listings are inserted into the database.
+- Database-backed profiles, trips, saves, requests, memberships, messages, notifications, reports, hidden trips, and post-trip traveler reviews.
+- Organizer approval/decline, atomic capacity checks, server-side women-only eligibility checks using self-declared profile eligibility, cancellation, and leaving a group.
+- Group chat available only to organizers and approved members, refreshed every five seconds. Leaving revokes access. Canceled groups are read-only.
+- Persistent in-app notifications; post-trip reviews only between registered members of the same completed trip.
+- Responsive login, discovery, personal plans, and modal flows. Existing illustrative landscape photos are bundled locally.
 
-## Run
-Serve `dist/` with any static HTTP server, for example `python -m http.server 3000 --directory dist`. No build step or dependencies are required. Hosting configuration is in `.openai/hosting.json`.
+## Run locally
 
-## Next implementation stage
-Add an authenticated API with PostgreSQL and server-side ownership and eligibility checks; define trip/request lifecycle; enable organizer approvals and member-only chat; implement privacy, reporting/moderation, account deletion, and verification policy. Replace illustrative fit scores with explainable destination/date/budget/style matching.
+Requires Node.js 22.21+ and Docker Compose.
 
-Photos: Unsplash, downloaded as local assets. Google Fonts: DM Sans and Manrope, with system fallbacks.
+```sh
+npm ci
+docker compose up -d db
+cp .env.example .env
+npm start
+```
 
-## Email-first login preview
-The initial route now shows an email-only login screen. Guest discovery remains available. Saving a trip, joining, creating, viewing personal pages, opening a profile, or recording a report requires a temporary preview session. The requested action resumes after continuing with an email.
+Open `http://localhost:3000`. Create your own account, complete your traveler profile, and create the first trip. Open a separate browser profile or incognito window to try a second account and the approval/chat flows.
 
-This is explicitly **not verified authentication**: no email is sent, no ownership proof is collected, and client-side guards are not a security boundary. The hosting platform's existing owner-private access remains unchanged. Before public launch, connect an email code/magic-link provider and enforce authentication and ownership on the server.
+Alternatively, `docker compose up --build` runs both the app and database. The Compose database password is for local development only; PostgreSQL is bound to loopback. Data survives container restarts in the named `tripling_db` volume. `docker compose down` preserves it; adding `-v` permanently removes local data.
 
-Preview sessions expire after eight hours and survive reloads in the same tab when browser storage is available. Session identity is kept in sessionStorage; trip/profile data is stored under a random per-session namespace. Ending the preview session removes that session's local records. Earlier unscoped prototype records are left untouched and are not imported into new sessions.
+Do not serve `dist/` alone: its interactions now require the Node API. The existing `.openai/hosting.json` identifies the previous static Sites preview; it is not an AWS deployment manifest and that hosted preview has not been updated to this backend.
+
+## Checks
+
+Integration tests reset their database, so the test runner requires a dedicated database whose name ends in `_test`.
+
+```sh
+docker compose exec db createdb -U tripling tripling_test
+TEST_DATABASE_URL=postgres://tripling:local-development-only@localhost:5432/tripling_test npm test
+npm run check
+```
+
+Tests cover password validation/storage, login/session rotation, origin checks, authorization, durable records, concurrent last-spot approvals, women-only eligibility at request and approval time, chat membership, leaving, cancellations, reviews, notifications, reports, logout, restart persistence, throttling, and migration safety.
+
+For end-to-end browser checks, start the app against that dedicated test database in another terminal, then run:
+
+```sh
+# Requires an installed Chromium/Chrome executable; no cloud services are used.
+TRIPLING_TEST_ORIGIN=http://127.0.0.1:3000 \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:browser
+```
+
+These checks create two local test accounts and a trip, exercise the complete approval/chat workflow, and capture desktop/mobile screenshots in ignored `work/browser-check/`. The script refuses non-local server origins. The included GitHub Actions workflow runs the database integration checks on pushes and pull requests; it has no AWS deployment job.
+
+## Database and migrations
+
+`server/migrations/*.sql` defines the schema. Startup applies new migrations in order, under a PostgreSQL advisory lock, before listening for requests. Applied migrations are checksum-protected; add new migrations instead of editing an applied file. `npm run migrate` runs them separately when needed.
+
+Sessions expire after seven days. Expired sessions and old throttle buckets are pruned on startup. Passwords and bearer session tokens are never placed in browser storage. The browser keeps only an allowlisted intended action in sessionStorage so login can return to a trip or action.
+
+The original prototype's localStorage records are not imported. This app starts with a clean database and cannot turn old unverified browser profiles into real accounts.
+
+## AWS deployment preparation
+
+**Nothing is deployed automatically. No AWS connection or resources were created for this implementation.**
+
+The intended architecture is:
+
+```text
+Browser → HTTPS Application Load Balancer → ECS Fargate frontend/API
+                                                 ↓
+                                        private RDS PostgreSQL
+                                                 ↑
+                                 credentials in Secrets Manager
+```
+
+- `infra/foundation.yaml`: VPC, two public load-balancer subnets, two private application/database subnets, ECR repository, encrypted RDS PostgreSQL, seven-day backups, generated database credentials, private ECR/Logs/Secrets Manager endpoints, and an S3 gateway endpoint for image layers. There is no NAT gateway and no public database.
+- `infra/service.yaml`: HTTPS load balancer, ACM certificate binding, HTTP-to-HTTPS redirect, non-root Fargate container, scoped IAM roles, health checks, rolling deployments with circuit-breaker rollback, CloudWatch logs, and CPU-based scaling from one to three tasks.
+- `Dockerfile`: Node.js 22 container with production dependencies and bundled RDS trust roots. Production database connections require certificate-verified TLS. AWS credentials come from the ECS task role; the application retrieves its database secret without exposing it to the browser.
+- `scripts/deploy-aws.sh`: manual, opt-in deployment; never runs on a Git push. Images are tagged with the exact source commit and immutable in ECR.
+
+When you explicitly decide to deploy later, you will need AWS CLI credentials with the necessary permissions, Docker, a domain, and an issued ACM certificate for that domain in the chosen region. Review the templates, service limits, and cost estimate in your account first. Region defaults to Mumbai (`ap-south-1`) and is configurable; no region has been provisioned.
+
+```sh
+# Example only. Run later, after reviewing costs and connecting AWS yourself.
+export AWS_REGION=ap-south-1
+export TRIPLING_DOMAIN=tripling.your-domain.example
+export TRIPLING_CERTIFICATE_ARN='<issued ACM certificate ARN in this region>'
+TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
+```
+
+The script prints the load balancer DNS target. Add a DNS alias/CNAME for your hostname, then verify `/healthz` and signup/login over HTTPS. New versions are deployed by rerunning the script from a clean committed checkout. `TRIPLING_MULTI_AZ=true` enables a standby RDS instance for higher database availability. Database deletion protection is enabled; snapshots, the secret, logs, and ECR repository have retention policies.
+
+AWS validation here is schema-level only. Account permissions, quotas, region-specific availability, DNS, certificate validity, and actual cloud connectivity still require testing during a future authorized deployment. This setup incurs charges for RDS, Fargate, the load balancer, private interface endpoints in both AZs, Secrets Manager, logs, storage, and image scans. Review those costs before enabling deployment.
+
+## API overview
+
+| Area                  | Routes                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| Accounts              | `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session`       |
+| Profile and discovery | `PUT /api/profile`, `GET /api/bootstrap`                                                                |
+| Trips                 | `POST /api/trips`, `POST /api/trips/:id/cancel`, `PUT /api/trips/:id/save`                              |
+| Requests              | `POST /api/trips/:id/requests`, `DELETE /api/trips/:id/requests`, `PUT /api/trips/:id/requests/:userId` |
+| Group                 | `GET /api/trips/:id/members`, `GET/POST /api/trips/:id/messages`                                        |
+| Trust                 | `POST /api/reports`, `GET/POST /api/trips/:id/reviews`                                                  |
+| Notifications         | `POST /api/notifications/read`                                                                          |
+| Health                | `GET /healthz`                                                                                          |
+
+Write requests require JSON and a same-origin `Origin` header. Production uses `PUBLIC_ORIGIN` and secure `__Host-` cookies. Queries are parameterized; ownership, membership, dates, capacity, and eligibility are enforced on the server.
+
+## Remaining launch work
+
+The reporting database is implemented; a moderator console, operational review process, privacy/legal documents, password-recovery flow, and account-deletion UI are not. Gender eligibility is self-declared, not identity verification. Chat polling returns the newest 100 messages; large-scale discovery, chat pagination, automated abuse detection, and full observability/alerting need further work. The initial deployment uses one database credential for migrations and runtime; separate database roles and a credential-rotation/restart process should be established for a production operating environment. Database backup restoration should be exercised before real users depend on it.
+
+Photos: Unsplash. Fonts: DM Sans and Manrope with system fallbacks. RDS CA bundle: `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`; refresh it as part of certificate maintenance.
