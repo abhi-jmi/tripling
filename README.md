@@ -20,3 +20,10 @@ Serve `dist/` with any static HTTP server, for example `python -m http.server 30
 Add an authenticated API with PostgreSQL and server-side ownership and eligibility checks; define trip/request lifecycle; enable organizer approvals and member-only chat; implement privacy, reporting/moderation, account deletion, and verification policy. Replace illustrative fit scores with explainable destination/date/budget/style matching.
 
 Photos: Unsplash, downloaded as local assets. Google Fonts: DM Sans and Manrope, with system fallbacks.
+
+## Email-first login preview
+The initial route now shows an email-only login screen. Guest discovery remains available. Saving a trip, joining, creating, viewing personal pages, opening a profile, or recording a report requires a temporary preview session. The requested action resumes after continuing with an email.
+
+This is explicitly **not verified authentication**: no email is sent, no ownership proof is collected, and client-side guards are not a security boundary. The hosting platform's existing owner-private access remains unchanged. Before public launch, connect an email code/magic-link provider and enforce authentication and ownership on the server.
+
+Preview sessions expire after eight hours and survive reloads in the same tab when browser storage is available. Session identity is kept in sessionStorage; trip/profile data is stored under a random per-session namespace. Ending the preview session removes that session's local records. Earlier unscoped prototype records are left untouched and are not imported into new sessions.
