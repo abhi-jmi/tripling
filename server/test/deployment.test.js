@@ -227,3 +227,11 @@ esac
     }
   });
 }
+
+await test('legacy exported application security group keeps its immutable description',async()=>{
+  const template=await readFile(join(source,'infra/foundation.yaml'),'utf8');
+  const group=template.split('  ApplicationSecurityGroup:\n')[1].split('  DatabaseSecurityGroup:\n')[0];
+  assert.match(group,/GroupDescription: ECS Fargate outbound access to private database and Secrets Manager\n/);
+  assert.match(group,/FromPort: 27017\s+ToPort: 27017/);
+  assert.match(template,/ApplicationSecurityGroup:\n    Value: !Ref ApplicationSecurityGroup\n    Export:\n      Name: !Sub "\$\{AWS::StackName\}-ApplicationSecurityGroup"/);
+});

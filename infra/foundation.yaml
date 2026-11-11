@@ -135,7 +135,9 @@ Resources:
   ApplicationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: ECS Fargate outbound access to Atlas, legacy database and Secrets Manager
+      # GroupDescription is immutable. Preserve the original value so this
+      # exported group is updated in place rather than replaced.
+      GroupDescription: ECS Fargate outbound access to private database and Secrets Manager
       VpcId: !Ref VPC
       SecurityGroupEgress:
         - IpProtocol: tcp
