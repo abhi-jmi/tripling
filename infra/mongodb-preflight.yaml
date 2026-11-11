@@ -10,6 +10,12 @@ Parameters:
   MongoDBSecretArn:
     Type: String
     AllowedPattern: "arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
+  SourceClusterArn:
+    Type: String
+    AllowedPattern: "arn:aws:ecs:[a-z0-9-]+:[0-9]{12}:cluster/.+"
+  SourceServiceArn:
+    Type: String
+    AllowedPattern: "arn:aws:ecs:[a-z0-9-]+:[0-9]{12}:service/.+"
   SourceDatabaseSecretArn:
     Type: String
     AllowedPattern: "arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
@@ -43,6 +49,9 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: [!Ref MongoDBSecretArn, !Ref SourceDatabaseSecretArn]
+              - Effect: Allow
+                Action: ecs:DescribeServices
+                Resource: !Ref SourceServiceArn
   ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -90,8 +99,8 @@ Resources:
           Image: !Ref ImageUri
           Essential: true
           ReadonlyRootFilesystem: true
-          EntryPoint: [node, scripts/mongo-preflight.mjs]
-          Command: []
+          EntryPoint: [node, scripts/mongodb-migration-worker.mjs]
+          Command: [preflight]
           # The application image has an HTTP healthcheck; this task is not a web server.
           HealthCheck:
             Command: [CMD, node, -e, "process.exit(0)"]
@@ -105,6 +114,10 @@ Resources:
               Value: !Ref AWS::Region
             - Name: MONGODB_SECRET_ARN
               Value: !Ref MongoDBSecretArn
+            - Name: SOURCE_CLUSTER_ARN
+              Value: !Ref SourceClusterArn
+            - Name: SOURCE_SERVICE_ARN
+              Value: !Ref SourceServiceArn
             - Name: PG_SOURCE_SECRET_ARN
               Value: !Ref SourceDatabaseSecretArn
             - Name: PG_SOURCE_HOST

@@ -47,7 +47,7 @@ if ! aws ecr describe-images --region "$region" --repository-name "$repository_n
 fi
 digest=$(aws ecr describe-images --region "$region" --repository-name "$repository_name" --image-ids imageTag="$tag" --query 'imageDetails[0].imageDigest' --output text)
 [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo 'Image digest unavailable.' >&2; exit 1; }
-aws cloudformation deploy --stack-name "$check_stack" --region "$region" --template-file infra/mongodb-preflight.yaml --capabilities CAPABILITY_IAM --parameter-overrides ImageUri="$repository@$digest" RepositoryArn="arn:aws:ecr:$region:$expected:repository/$repository_name" MongoDBSecretArn="$TRIPLING_MONGODB_SECRET_ARN" MongoDBDatabase="${TRIPLING_MONGODB_DATABASE:-tripling}" SourceDatabaseHost="$source_host" SourceDatabaseSecretArn="$source_secret" --no-fail-on-empty-changeset
+aws cloudformation deploy --stack-name "$check_stack" --region "$region" --template-file infra/mongodb-preflight.yaml --capabilities CAPABILITY_IAM --parameter-overrides ImageUri="$repository@$digest" RepositoryArn="arn:aws:ecr:$region:$expected:repository/$repository_name" MongoDBSecretArn="$TRIPLING_MONGODB_SECRET_ARN" MongoDBDatabase="${TRIPLING_MONGODB_DATABASE:-tripling}" SourceClusterArn="$cluster" SourceServiceArn="$service" SourceDatabaseHost="$source_host" SourceDatabaseSecretArn="$source_secret" --no-fail-on-empty-changeset
 aws cloudformation describe-stacks --stack-name "$check_stack" --region "$region" > "$check_tmp/check.json"
 task_definition=$(jq -er '.Stacks[0].Outputs[]|select(.OutputKey=="TaskDefinitionArn")|.OutputValue' "$check_tmp/check.json")
 log_group=$(jq -er '.Stacks[0].Outputs[]|select(.OutputKey=="LogGroupName")|.OutputValue' "$check_tmp/check.json")

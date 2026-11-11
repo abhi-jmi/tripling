@@ -15,3 +15,4 @@ server/test/**
 !scripts/migrate-postgres-to-mongo.mjs
 !scripts/postgres-source.mjs
 !scripts/mongo-preflight.mjs
+!scripts/mongodb-migration-worker.mjs

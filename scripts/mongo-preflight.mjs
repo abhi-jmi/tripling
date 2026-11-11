@@ -22,7 +22,7 @@ export async function preflight(source, target, exportSource = exportPostgres) {
     );
   return { sourceCounts, targetCounts };
 }
-async function run() {
+export async function runPreflight() {
   let source, target;
   try {
     target = await createDatabase();
@@ -51,4 +51,4 @@ async function run() {
   }
 }
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1])
-  await run();
+  await runPreflight();
