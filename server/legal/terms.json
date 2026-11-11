@@ -1,9 +1,9 @@
 {
   "slug": "terms",
-  "version": "2026-11-11.4",
+  "version": "2026-11-11.6",
   "title": "Terms and Conditions",
-  "effectiveOn": "2026-11-10",
-  "introduction": "Last updated: November 10, 2026. Welcome to Tripling (the “Platform”). These Terms govern access to and use of our travel companion website. By registering, you agree to these Terms and acknowledge the Privacy Policy. If you do not agree, do not create an account or use the service.",
+  "effectiveOn": "2026-11-11",
+  "introduction": "Last updated: November 11, 2026. Welcome to Tripling (the “Platform”). These Terms govern access to and use of our travel companion website. By registering, you agree to these Terms and acknowledge the Privacy Policy. If you do not agree, do not create an account or use the service.",
   "sections": [
     {
       "heading": "1. Nature of service and responsibility",
@@ -11,7 +11,8 @@
         "Tripling, operated by {{operator}}, is a peer-to-peer venue for independent travelers to post plans and connect with potential companions. The operator’s contact is {{contact}}. The platform does not operate or manage vehicles, transport services, carpooling operations, tours, or tour guiding, and does not act as a travel agent or a partner of a traveler.",
         "The platform is intended to perform an intermediary role. Any protection under Section 79 of India’s Information Technology Act, 2000 depends on applicable law and the relevant legal conditions; describing the service as an intermediary does not itself establish immunity.",
         "Travel can involve injury, illness, emergencies, theft, financial fraud, accidents, delays, cancellations, harassment, disputes, or illegal conduct by others. Make your own informed decisions about companions and travel arrangements. The operator does not guarantee another person’s conduct, a trip’s availability, or a third-party provider’s performance.",
-        "To the extent permitted by applicable law, the operator is not responsible for losses caused by independent travelers or providers outside its control. These Terms do not create “zero liability” or exclude responsibility, remedies, or consumer protections that cannot lawfully be excluded. Liability for a particular claim depends on the facts and applicable law."
+        "To the extent permitted by applicable law, the operator is not responsible for losses caused by independent travelers or providers outside its control. These Terms do not create “zero liability” or exclude responsibility, remedies, or consumer protections that cannot lawfully be excluded. Liability for a particular claim depends on the facts and applicable law.",
+        "Optional city suggestions are provided by Google Maps Platform. Use of Google Places features is subject to the Google Maps/Google Earth Additional Terms of Service at https://maps.google.com/help/terms_maps/ and Google Privacy Policy at https://policies.google.com/privacy. Suggestions may be incomplete or inaccurate; confirm your intended city and meeting arrangements independently."
       ]
     },
     {

@@ -11,37 +11,51 @@ concurrency:
   cancel-in-progress: false
 jobs:
   test:
-    name: PostgreSQL and application checks
-    runs-on: ubuntu-latest
+    name: MongoDB and application checks
+    # MongoDB 8.0 rejects the 6.19+ kernel on the current ubuntu-latest image.
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:17-bookworm
-        env:
-          POSTGRES_USER: tripling
-          POSTGRES_PASSWORD: local-test-only
-          POSTGRES_DB: tripling_test
-        ports: [5432:5432]
-        options: >-
-          --health-cmd "pg_isready -U tripling -d tripling_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
+      - name: Start MongoDB replica set
+        run: |
+          trap 'docker logs --tail 80 tripling-mongo; docker inspect --format "{{json .State}}" tripling-mongo' ERR
+          docker run -d --name tripling-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet tripling-rs --bind_ip_all
+          for attempt in {1..30}; do
+            if docker exec tripling-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec tripling-mongo mongosh --quiet --eval 'rs.initiate({_id:"tripling-rs",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in {1..30}; do
+            if docker exec tripling-mongo mongosh --quiet --eval 'if(!db.hello().isWritablePrimary)quit(1)' >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Start read-only PostgreSQL transfer test source
+        run: |
+          docker run -d --name tripling-transfer-source -p 127.0.0.1:5432:5432 -e POSTGRES_USER=tripling -e POSTGRES_PASSWORD=local-test-only -e POSTGRES_DB=tripling_transfer_test postgres:17-bookworm
+          for attempt in {1..30}; do
+            if docker exec tripling-transfer-source pg_isready -U tripling -d tripling_transfer_test; then exit 0; fi
+            sleep 1
+          done
+          exit 1
       - run: npm ci
       - run: npm run check
       - run: npm test
         env:
-          TEST_DATABASE_URL: postgres://tripling:local-test-only@localhost:5432/tripling_test
+          TEST_MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=tripling-rs
+          TEST_MONGODB_DATABASE: tripling_test
+          PG_SOURCE_TEST_URI: postgres://tripling:local-test-only@127.0.0.1:5432/tripling_transfer_test
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install 'cfn-lint==1.60.0'
       - run: cfn-lint infra/*.yaml
-      - run: bash -n scripts/deploy-aws.sh scripts/deploy-release.sh
+      - run: bash -n scripts/deploy-aws.sh scripts/deploy-release.sh scripts/deploy-foundation.sh scripts/foundation-template.sh scripts/check-mongodb-aws.sh scripts/preflight-mongodb-aws.sh scripts/cutover-mongodb-aws.sh scripts/reopen-mongodb-aws.sh scripts/retire-postgres-aws.sh
   configuration:
     name: Check deployment connection
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

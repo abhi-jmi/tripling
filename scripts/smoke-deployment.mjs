@@ -9,14 +9,35 @@ assert(
   /^[a-f0-9]{40}$/.test(process.env.EXPECTED_VERSION || ""),
   "Provide the expected commit SHA.",
 );
+const retries = Number(process.env.SMOKE_503_ATTEMPTS || 1);
+const delay = Number(process.env.SMOKE_503_DELAY_MS || 2000);
+assert(
+  Number.isInteger(retries) && retries >= 1 && retries <= 30,
+  "Invalid smoke retry count.",
+);
+assert(
+  Number.isInteger(delay) && delay >= 0 && delay <= 5000,
+  "Invalid smoke retry delay.",
+);
 async function get(path) {
-  const response = await fetch(new URL(path, origin), {
-    redirect: "error",
-    signal: AbortSignal.timeout(15000),
-  });
-  assert.equal(response.status, 200, `${path} must return 200`);
-  return response;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const response = await fetch(new URL(path, origin), {
+      redirect: "error",
+      signal: AbortSignal.timeout(15000),
+    });
+    if (response.status === 503 && attempt < retries) {
+      await response.body?.cancel();
+      console.log(
+        `Waiting for maintenance rule propagation: ${path} (${attempt}/${retries})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+    assert.equal(response.status, 200, `${path} must return 200`);
+    return response;
+  }
 }
+
 const health = await (await get("/healthz")).json();
 assert.equal(health.status, "ok");
 assert.equal(health.version, process.env.EXPECTED_VERSION);

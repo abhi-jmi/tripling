@@ -1,4 +1,5 @@
 import express from "express";
+import { createPlacesAutocomplete } from "./places.js";
 import helmet from "helmet";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
@@ -31,7 +32,6 @@ class HttpError extends Error {
 const fail = (status, message) => {
   throw new HttpError(status, message);
 };
-const uuid = z.uuid();
 const email = z
   .email()
   .max(254)
@@ -83,6 +83,7 @@ export function createApp(
     production = process.env.NODE_ENV === "production",
     publicOrigin = process.env.PUBLIC_ORIGIN,
     googleAdapter = null,
+    placesAdapter = createPlacesAutocomplete(),
   } = {},
 ) {
   const app = express();
@@ -111,7 +112,7 @@ export function createApp(
   app.use(express.json({ limit: "32kb" }));
   app.get("/healthz", async (req, res) => {
     try {
-      await pool.query("SELECT 1");
+      await pool.ping();
       res.set("Cache-Control", "no-store").json({
         status: "ok",
         version: process.env.APP_VERSION || "development",
@@ -160,11 +161,18 @@ export function createApp(
     try {
       const token = sessionToken(req);
       if (token) {
-        const result = await pool.query(
-          "SELECT u.*, EXISTS(SELECT 1 FROM oauth_identities oi WHERE oi.user_id=u.id AND oi.provider='google') AS google_linked FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()",
-          [digest(token)],
-        );
-        req.user = result.rows[0] || null;
+        const session = await pool.one("sessions", {
+          token_hash: digest(token),
+          expires_at: { $gt: new Date() },
+        });
+        req.user = session
+          ? await pool.one("users", { id: session.user_id })
+          : null;
+        if (req.user)
+          req.user.google_linked = !!(await pool.one("oauth_identities", {
+            provider: "google",
+            user_id: req.user.id,
+          }));
       }
       next();
     } catch (e) {
@@ -177,11 +185,16 @@ export function createApp(
       : res.status(401).json({ error: "Please log in to continue." });
   async function throttle(req, key, limit) {
     const window = Math.floor(Date.now() / 900000);
-    const result = await pool.query(
-      "INSERT INTO auth_rate_limits(bucket_key,window_start) VALUES($1,$2) ON CONFLICT(bucket_key,window_start) DO UPDATE SET attempts=auth_rate_limits.attempts+1 RETURNING attempts",
-      [digest(key), window],
+    const result = await pool.change(
+      "auth_rate_limits",
+      { bucket_key: digest(key), window_start: window },
+      {
+        $inc: { attempts: 1 },
+        $setOnInsert: { expires_at: new Date((window + 3) * 900000) },
+      },
+      { upsert: true },
     );
-    if (result.rows[0].attempts > limit)
+    if (result.attempts > limit)
       fail(429, "Too many attempts. Please try again in 15 minutes.");
   }
   app.get("/api/legal", async (req, res) =>
@@ -197,16 +210,14 @@ export function createApp(
     const hash = await hashPassword(data.password);
     try {
       const user = await transaction(pool, async (db) => {
-        const result = await db.query(
-          "INSERT INTO users(email,password_hash,adult_confirmed,first_name,last_name,display_name) VALUES($1,$2,true,$3,$4,$5) RETURNING *",
-          [
-            data.email,
-            hash,
-            data.firstName,
-            data.lastName,
-            data.firstName + " " + data.lastName,
-          ],
-        );
+        const result = await db.insert("users", {
+          email: data.email,
+          password_hash: hash,
+          adult_confirmed: true,
+          first_name: data.firstName,
+          last_name: data.lastName,
+          display_name: data.firstName + " " + data.lastName,
+        });
         const docs = await currentLegalDocuments(db, { production });
         if (!docs.terms || !docs.privacy)
           fail(
@@ -222,16 +233,17 @@ export function createApp(
             "Our policies changed. Refresh this page and review the latest versions before signing up.",
           );
         for (const slug of ["terms", "privacy"])
-          await db.query(
-            "INSERT INTO legal_acceptances(user_id,slug,version) VALUES($1,$2,$3)",
-            [result.rows[0].id, slug, docs[slug].version],
-          );
-        await issueSession(db, req, res, result.rows[0].id, production);
-        return result.rows[0];
+          await db.insert("legal_acceptances", {
+            user_id: result.id,
+            slug,
+            version: docs[slug].version,
+          });
+        await issueSession(db, req, res, result.id, production);
+        return result;
       });
       res.status(201).json({ user: publicUser(user) });
     } catch (e) {
-      if (e.code === "23505")
+      if (e.code === 11000)
         fail(
           409,
           "An account cannot be created with these details. Try logging in.",
@@ -243,10 +255,7 @@ export function createApp(
     await throttle(req, `login-ip:${req.ip}`, 40);
     const data = loginSchema.parse(req.body);
     await throttle(req, `login-email:${data.email}`, 10);
-    const result = await pool.query("SELECT * FROM users WHERE email=$1", [
-      data.email,
-    ]);
-    const user = result.rows[0];
+    const user = await pool.one("users", { email: data.email });
     const valid = await verifyPassword(
       data.password,
       user?.password_hash || dummyHash,
@@ -262,10 +271,7 @@ export function createApp(
   );
   app.post("/api/auth/logout", async (req, res) => {
     const token = sessionToken(req);
-    if (token)
-      await pool.query("DELETE FROM sessions WHERE token_hash=$1", [
-        digest(token),
-      ]);
+    if (token) await pool.remove("sessions", { token_hash: digest(token) });
     res.clearCookie(cookieName, {
       ...cookieOptions(production),
       maxAge: undefined,
@@ -274,19 +280,23 @@ export function createApp(
   });
   app.put("/api/profile", requireUser, async (req, res) => {
     const d = profileSchema.parse(req.body);
-    const result = await pool.query(
-      "UPDATE users SET display_name=$2,city=$3,gender=$4,bio=$5,adult_confirmed=true,first_name=$6,last_name=$7 WHERE id=$1 RETURNING *",
-      [
-        req.user.id,
-        d.firstName + " " + d.lastName,
-        d.city,
-        d.gender,
-        d.bio,
-        d.firstName,
-        d.lastName,
-      ],
+    const user = await pool.change(
+      "users",
+      { id: req.user.id },
+      {
+        $set: {
+          display_name: d.firstName + " " + d.lastName,
+          city: d.city,
+          gender: d.gender,
+          bio: d.bio,
+          adult_confirmed: true,
+          first_name: d.firstName,
+          last_name: d.lastName,
+        },
+      },
     );
-    res.json({ user: publicUser(result.rows[0]) });
+    user.google_linked = req.user.google_linked;
+    res.json({ user: publicUser(user) });
   });
   registerGoogleAuth(app, pool, {
     production,
@@ -296,7 +306,12 @@ export function createApp(
     personName,
     googleAdapter,
   });
-  registerTripRoutes(app, pool, { requireUser, throttle, publicUser });
+  registerTripRoutes(app, pool, {
+    requireUser,
+    throttle,
+    publicUser,
+    placesAdapter,
+  });
   registerBlockRoutes(app, pool, { requireUser, throttle });
   app.use("/api", (req, res) =>
     res.status(404).json({ error: "API endpoint not found." }),

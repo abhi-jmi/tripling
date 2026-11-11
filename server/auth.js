@@ -69,15 +69,13 @@ export function cookieOptions(production) {
 }
 export async function issueSession(db, req, res, userId, production) {
   const previous = sessionToken(req);
-  if (previous)
-    await db.query("DELETE FROM sessions WHERE token_hash=$1", [
-      digest(previous),
-    ]);
+  if (previous) await db.remove("sessions", { token_hash: digest(previous) });
   const token = randomBytes(32).toString("hex");
-  await db.query(
-    "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '7 days')",
-    [digest(token), userId],
-  );
+  await db.insert("sessions", {
+    token_hash: digest(token),
+    user_id: userId,
+    expires_at: new Date(Date.now() + 7 * 86400000),
+  });
   res.cookie(cookieName, token, cookieOptions(production));
 }
 export function publicUser(row) {

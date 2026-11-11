@@ -1,0 +1,18 @@
+# Only application runtime files enter the image/build context.
+**
+!package.json
+!package-lock.json
+!server
+!server/**
+server/test
+server/test/**
+!dist
+!dist/**
+!certs
+!certs/**
+!scripts
+!scripts/mongo-transfer.mjs
+!scripts/migrate-postgres-to-mongo.mjs
+!scripts/postgres-source.mjs
+!scripts/mongo-preflight.mjs
+!scripts/mongodb-migration-worker.mjs

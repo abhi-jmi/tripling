@@ -1,5 +1,3 @@
-export const TODAY_SQL =
-  "(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date";
 export const travelDate = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
     new Date(),
@@ -15,32 +13,82 @@ export async function requireParticipant(
   userId,
   { current = false } = {},
 ) {
-  const query = current
-    ? "SELECT 1 FROM trip_members WHERE trip_id=$1 AND user_id=$2"
-    : "SELECT 1 FROM trip_participants WHERE trip_id=$1 AND user_id=$2";
-  if (!(await db.query(query, [tripId, userId])).rowCount)
+  if (
+    !(await db.one(current ? "trip_members" : "trip_participants", {
+      trip_id: tripId,
+      user_id: userId,
+    }))
+  )
     throw httpError(
       403,
       "This information is for this trip’s registered participants only.",
     );
 }
 export async function hasBlock(db, a, b) {
-  return (
-    (
-      await db.query(
-        "SELECT 1 FROM user_blocks WHERE ended_at IS NULL AND ((blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1))",
-        [a, b],
-      )
-    ).rowCount > 0
-  );
+  return !!(await db.one("user_blocks", {
+    ended_at: null,
+    $or: [
+      { blocker_id: a, blocked_id: b },
+      { blocker_id: b, blocked_id: a },
+    ],
+  }));
 }
 export async function blockedWithCrew(db, tripId, userId) {
+  const crew = (
+    await db.all("trip_members", { trip_id: tripId, user_id: { $ne: userId } })
+  ).map((m) => m.user_id);
+  return !!(await db.one("user_blocks", {
+    ended_at: null,
+    $or: [
+      { blocker_id: userId, blocked_id: { $in: crew } },
+      { blocked_id: userId, blocker_id: { $in: crew } },
+    ],
+  }));
+}
+export async function addMember(db, tripId, userId) {
+  const now = new Date();
+  await db.insert("trip_members", {
+    trip_id: tripId,
+    user_id: userId,
+    joined_at: now,
+  });
+  await db.update(
+    "trip_participants",
+    { trip_id: tripId, user_id: userId },
+    {
+      $set: { last_joined_at: now, left_at: null },
+      $setOnInsert: { first_joined_at: now },
+    },
+    { upsert: true },
+  );
+}
+export async function removeMember(db, tripId, userId) {
+  const result = await db.remove("trip_members", {
+    trip_id: tripId,
+    user_id: userId,
+  });
+  if (result.deletedCount)
+    await db.update(
+      "trip_participants",
+      { trip_id: tripId, user_id: userId },
+      { $set: { left_at: new Date() } },
+    );
+}
+export function prefix(value) {
+  return new RegExp("^" + value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+}
+export async function reviewEligible(db, trip, user) {
+  const t =
+    typeof trip === "string" ? await db.one("trips", { id: trip }) : trip;
+  if (!t) return false;
+  const p = await db.one("trip_participants", { trip_id: t.id, user_id: user });
+  const day = (value) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(
+      new Date(value),
+    );
   return (
-    (
-      await db.query(
-        "SELECT 1 FROM user_blocks b JOIN trip_members m ON m.trip_id=$1 AND m.user_id<>$2 WHERE b.ended_at IS NULL AND ((b.blocker_id=$2 AND b.blocked_id=m.user_id) OR (b.blocked_id=$2 AND b.blocker_id=m.user_id)) LIMIT 1",
-        [tripId, userId],
-      )
-    ).rowCount > 0
+    !!p &&
+    day(p.first_joined_at) <= t.ends_on &&
+    (!p.left_at || day(p.left_at) >= t.starts_on)
   );
 }

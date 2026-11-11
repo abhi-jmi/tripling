@@ -2853,3 +2853,25 @@ body.auth-screen {
 .site-nav {
   overflow-x: auto;
 }
+
+.location-feedback {
+  display: block;
+  color: #657163;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+}
+.location-feedback:empty {
+  display: none;
+}
+.places-attribution {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 12px 8px;
+  background: #fff;
+}
+.places-attribution img {
+  width: 120px;
+  height: 14px;
+  max-width: none;
+}

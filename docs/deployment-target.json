@@ -9,6 +9,7 @@
   "authenticationMethod": "IAM Identity Center / SSO",
   "ssoStartUrl": null,
   "ssoRegion": null,
-  "deploymentStatus": "Certificate reported ISSUED by owner; foundation/service creation not yet confirmed",
-  "certificateArn": "arn:aws:acm:ap-southeast-2:669991883783:certificate/0d55419d-b822-4fb9-9643-f8426199f20b"
+  "deploymentStatus": "Existing ECS service previously verified; MongoDB Atlas cutover not performed",
+  "certificateArn": "arn:aws:acm:ap-southeast-2:669991883783:certificate/0d55419d-b822-4fb9-9643-f8426199f20b",
+  "database": "MongoDB Atlas on AWS Sydney (target; live cutover pending)"
 }

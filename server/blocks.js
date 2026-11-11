@@ -1,10 +1,51 @@
 import { z } from "zod";
-import { transaction } from "./db.js";
-import { httpError, requireParticipant } from "./travel-rules.js";
+import { transaction, lockTravelers } from "./db.js";
+import { httpError, requireParticipant, prefix } from "./travel-rules.js";
 const uuid = z.uuid();
 const fail = (s, m) => {
   throw httpError(s, m);
 };
+export async function tripNotices(db, tripIds, target = null) {
+  const filter = {
+    ended_at: null,
+    context_trip_id: { $in: tripIds },
+    ...(target
+      ? { $or: [{ blocker_id: target }, { blocked_id: target }] }
+      : {}),
+  };
+  const records = await db.all("user_blocks", filter, {
+      sort: { created_at: -1 },
+    }),
+    ids = records.flatMap((b) => [b.blocker_id, b.blocked_id]);
+  const users = new Map(
+    (
+      await db.all(
+        "users",
+        { id: { $in: ids } },
+        { projection: { _id: 0, id: 1, display_name: 1 } },
+      )
+    ).map((u) => [u.id, u.display_name]),
+  );
+  const trips = new Map(
+    (
+      await db.all(
+        "trips",
+        { id: { $in: tripIds } },
+        { projection: { _id: 0, id: 1, title: 1 } },
+      )
+    ).map((t) => [t.id, t.title]),
+  );
+  return records.map((b) => ({
+    id: b.id,
+    context_trip_id: b.context_trip_id,
+    category: b.category,
+    reason: b.reason,
+    created_at: b.created_at,
+    blocker: users.get(b.blocker_id),
+    blocked: users.get(b.blocked_id),
+    title: trips.get(b.context_trip_id),
+  }));
+}
 export function registerBlockRoutes(app, pool, { requireUser, throttle }) {
   app.get("/api/travelers", requireUser, async (req, res) => {
     await throttle(req, `traveler-search:${req.user.id}`, 150);
@@ -14,38 +55,56 @@ export function registerBlockRoutes(app, pool, { requireUser, throttle }) {
       .min(1)
       .max(101)
       .parse(req.query.q || "");
-    const r = await pool.query(
-      "SELECT id,display_name AS name,bio FROM users WHERE lower(left(display_name,char_length($1)))=lower($1) ORDER BY lower(display_name),id LIMIT 20",
-      [q],
-    );
-    res.json({ travelers: r.rows });
-  });
-  app.get("/api/travelers/:id", requireUser, async (req, res) => {
-    const id = uuid.parse(req.params.id);
-    const {
-      rows: [user],
-    } = await pool.query(
-      "SELECT id,display_name AS name,bio FROM users WHERE id=$1",
-      [id],
-    );
-    if (!user) fail(404, "Traveler not found.");
-    const shared = await pool.query(
-      "SELECT t.id,t.title FROM trip_participants a JOIN trip_participants b ON a.trip_id=b.trip_id JOIN trips t ON t.id=a.trip_id WHERE a.user_id=$1 AND b.user_id=$2 ORDER BY t.starts_on DESC",
-      [req.user.id, id],
-    );
-    const notices = await pool.query(
-      "SELECT b.id,b.context_trip_id,b.category,b.reason,b.created_at,a.display_name AS blocker,v.display_name AS blocked,t.title FROM user_blocks b JOIN users a ON a.id=b.blocker_id JOIN users v ON v.id=b.blocked_id JOIN trips t ON t.id=b.context_trip_id JOIN trip_participants p ON p.trip_id=b.context_trip_id AND p.user_id=$1 WHERE b.ended_at IS NULL AND (b.blocked_id=$2 OR b.blocker_id=$2) ORDER BY b.created_at DESC",
-      [req.user.id, id],
-    );
-    const own = await pool.query(
-      "SELECT id FROM user_blocks WHERE blocker_id=$1 AND blocked_id=$2 AND ended_at IS NULL",
-      [req.user.id, id],
+    const users = await pool.all(
+      "users",
+      { display_name: prefix(q) },
+      {
+        projection: { _id: 0, id: 1, display_name: 1, bio: 1 },
+        sort: { display_name: 1, id: 1 },
+        limit: 20,
+      },
     );
     res.json({
-      user,
-      sharedTrips: shared.rows,
-      notices: notices.rows,
-      myBlockId: own.rows[0]?.id || null,
+      travelers: users.map((u) => ({
+        id: u.id,
+        name: u.display_name,
+        bio: u.bio,
+      })),
+    });
+  });
+  app.get("/api/travelers/:id", requireUser, async (req, res) => {
+    const id = uuid.parse(req.params.id),
+      u = await pool.one(
+        "users",
+        { id },
+        { projection: { _id: 0, id: 1, display_name: 1, bio: 1 } },
+      );
+    if (!u) fail(404, "Traveler not found.");
+    const mine = await pool.all("trip_participants", { user_id: req.user.id }),
+      their = await pool.all("trip_participants", {
+        user_id: id,
+        trip_id: { $in: mine.map((p) => p.trip_id) },
+      });
+    const shared = await pool.all(
+      "trips",
+      { id: { $in: their.map((p) => p.trip_id) } },
+      { projection: { _id: 0, id: 1, title: 1 }, sort: { starts_on: -1 } },
+    );
+    const notices = await tripNotices(
+        pool,
+        mine.map((p) => p.trip_id),
+        id,
+      ),
+      own = await pool.one("user_blocks", {
+        blocker_id: req.user.id,
+        blocked_id: id,
+        ended_at: null,
+      });
+    res.json({
+      user: { id: u.id, name: u.display_name, bio: u.bio },
+      sharedTrips: shared,
+      notices,
+      myBlockId: own?.id || null,
     });
   });
   app.post("/api/blocks", requireUser, async (req, res) => {
@@ -69,41 +128,39 @@ export function registerBlockRoutes(app, pool, { requireUser, throttle }) {
       })
       .parse(req.body);
     if (d.userId === req.user.id) fail(400, "You cannot block yourself.");
-    const id = await transaction(pool, async (db) => {
-      // Serialize block creation with requests/approvals/leaving in all affected groups.
-      await db.query(
-        "SELECT t.id FROM trips t WHERE EXISTS(SELECT 1 FROM trip_members m WHERE m.trip_id=t.id AND m.user_id IN ($1,$2)) ORDER BY t.id FOR UPDATE",
-        [req.user.id, d.userId],
-      );
-      if (
-        !(await db.query("SELECT id FROM users WHERE id=$1", [d.userId]))
-          .rowCount
-      )
-        fail(404, "Traveler not found.");
-      if (d.tripId) {
-        await requireParticipant(db, d.tripId, req.user.id);
-        await requireParticipant(db, d.tripId, d.userId);
-      }
-      try {
-        const r = await db.query(
-          "INSERT INTO user_blocks(blocker_id,blocked_id,context_trip_id,category,reason) VALUES($1,$2,$3,$4,$5) RETURNING id",
-          [req.user.id, d.userId, d.tripId, d.category, d.reason],
-        );
-        return r.rows[0].id;
-      } catch (e) {
-        if (e.code === "23505") fail(409, "You already blocked this traveler.");
-        throw e;
-      }
-    });
-    res.status(201).json({ id });
+    try {
+      const id = await transaction(pool, async (db) => {
+        await lockTravelers(db, [req.user.id, d.userId]);
+        if (!(await db.one("users", { id: d.userId })))
+          fail(404, "Traveler not found.");
+        if (d.tripId) {
+          await requireParticipant(db, d.tripId, req.user.id);
+          await requireParticipant(db, d.tripId, d.userId);
+        }
+        return (
+          await db.insert("user_blocks", {
+            blocker_id: req.user.id,
+            blocked_id: d.userId,
+            context_trip_id: d.tripId,
+            category: d.category,
+            reason: d.reason,
+          })
+        ).id;
+      });
+      res.status(201).json({ id });
+    } catch (e) {
+      if (e.code === 11000) fail(409, "You already blocked this traveler.");
+      throw e;
+    }
   });
   app.delete("/api/blocks/:id", requireUser, async (req, res) => {
-    const id = uuid.parse(req.params.id);
-    const r = await pool.query(
-      "UPDATE user_blocks SET ended_at=now() WHERE id=$1 AND blocker_id=$2 AND ended_at IS NULL RETURNING id",
-      [id, req.user.id],
-    );
-    if (!r.rowCount)
+    const id = uuid.parse(req.params.id),
+      r = await pool.update(
+        "user_blocks",
+        { id, blocker_id: req.user.id, ended_at: null },
+        { $set: { ended_at: new Date() } },
+      );
+    if (!r.matchedCount)
       fail(404, "Active block not found. Only its author can end it.");
     res.json({ ok: true });
   });
@@ -112,19 +169,15 @@ export function registerBlockRoutes(app, pool, { requireUser, throttle }) {
     const id = uuid.parse(req.params.id),
       { reason } = z
         .object({ reason: z.string().trim().min(15).max(600) })
-        .parse(req.body);
-    const {
-      rows: [block],
-    } = await pool.query(
-      "SELECT context_trip_id FROM user_blocks WHERE id=$1",
-      [id],
-    );
+        .parse(req.body),
+      block = await pool.one("user_blocks", { id });
     if (!block?.context_trip_id) fail(404, "Trip notice not found.");
     await requireParticipant(pool, block.context_trip_id, req.user.id);
-    await pool.query(
-      "INSERT INTO block_reason_reports(block_id,reporter_id,reason) VALUES($1,$2,$3)",
-      [id, req.user.id, reason],
-    );
+    await pool.insert("block_reason_reports", {
+      block_id: id,
+      reporter_id: req.user.id,
+      reason,
+    });
     res.status(201).json({ ok: true });
   });
 }

@@ -1,4 +1,4 @@
-import { createPool } from "./db.js";
+import { createDatabase } from "./db.js";
 import { migrate } from "./migrate.js";
 import { publishLegalDocuments, legalConfiguration } from "./legal.js";
 import { createApp } from "./app.js";
@@ -34,8 +34,31 @@ if (process.env.GOOGLE_OAUTH_SECRET_ARN) {
     client.destroy();
   }
 }
+if (process.env.GOOGLE_PLACES_SECRET_ARN) {
+  const { SecretsManagerClient, GetSecretValueCommand } =
+    await import("@aws-sdk/client-secrets-manager");
+  const client = new SecretsManagerClient({});
+  try {
+    const result = await client.send(
+      new GetSecretValueCommand({
+        SecretId: process.env.GOOGLE_PLACES_SECRET_ARN,
+      }),
+    );
+    let credentials;
+    try {
+      credentials = JSON.parse(result.SecretString || "{}");
+    } catch {
+      throw new Error("Google Places secret must be valid JSON.");
+    }
+    if (typeof credentials.apiKey !== "string" || !credentials.apiKey.trim())
+      throw new Error("Google Places secret requires apiKey.");
+    process.env.GOOGLE_PLACES_API_KEY = credentials.apiKey.trim();
+  } finally {
+    client.destroy();
+  }
+}
 legalConfiguration();
-const pool = await createPool();
+const pool = await createDatabase();
 await migrate(pool);
 await publishLegalDocuments(pool);
 const server = createApp(pool).listen(
@@ -54,7 +77,7 @@ function shutdown() {
   if (stopping) return;
   stopping = true;
   server.close(async () => {
-    await pool.end();
+    await pool.close();
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 10000).unref();

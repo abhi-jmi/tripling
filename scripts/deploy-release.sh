@@ -16,6 +16,11 @@ release_tmp=$(mktemp -d)
 trap 'rm -rf "$release_tmp"' EXIT
 aws cloudformation describe-stacks --stack-name "$service_stack" --region "$AWS_REGION" --output json > "$release_tmp/stack.json"
 output(){ jq -er --arg key "$1" '.Stacks[0].Outputs[]|select(.OutputKey==$key)|.OutputValue' "$release_tmp/stack.json"; }
+# Refuse to publish MongoDB-only code onto the old PostgreSQL service.
+if ! jq -e '.Stacks[0].Parameters | any(.ParameterKey=="MongoDBSecretArn" and (.ParameterValue|length)>0)' "$release_tmp/stack.json" >/dev/null; then
+  echo 'MongoDB cutover is not configured. Complete the verified Atlas import and one-time service update first; PostgreSQL deployment was not changed.' >&2
+  exit 1
+fi
 foundation=$(jq -er '.Stacks[0].Parameters[] | select(.ParameterKey=="FoundationStack") | .ParameterValue' "$release_tmp/stack.json")
 aws cloudformation describe-stacks --stack-name "$foundation" --region "$AWS_REGION" --output json > "$release_tmp/foundation.json"
 repository=$(jq -er '.Stacks[0].Outputs[]|select(.OutputKey=="RepositoryUri")|.OutputValue' "$release_tmp/foundation.json")
@@ -56,6 +61,6 @@ if ! jq -e --arg task "$new_task" '.services[0] | .taskDefinition==$task and .ru
 fi
 if ! APP_ORIGIN="$website" EXPECTED_VERSION="$release_sha" node scripts/smoke-deployment.mjs; then rollback;exit 1; fi
 if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
-  { echo '### Tripling deployment verified'; echo; echo "- URL: $website"; echo "- Commit: $release_sha"; echo "- Image digest: $image_digest"; echo '- Health, PostgreSQL-backed API, anonymous session, and published legal pages passed smoke checks.'; } >> "$GITHUB_STEP_SUMMARY"
+  { echo '### Tripling deployment verified'; echo; echo "- URL: $website"; echo "- Commit: $release_sha"; echo "- Image digest: $image_digest"; echo '- Health, MongoDB-backed API, anonymous session, and published legal pages passed smoke checks.'; } >> "$GITHUB_STEP_SUMMARY"
 fi
 echo "Deployment verified: $website ($release_sha)"

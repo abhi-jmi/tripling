@@ -1,11 +1,21 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Tripling private PostgreSQL database, image repository, and application networking. Creates billable resources.
+Description: Tripling networking and image repository, with retained legacy PostgreSQL infrastructure for safe MongoDB cutover. Creates billable resources.
 Parameters:
+  LegacyPostgresEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set false only after verified MongoDB cutover to snapshot and remove legacy RDS
+  LegacyPostgresDeletionProtection:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Disable in a separate successful update before retiring legacy RDS
   InternetEgress:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
-    Description: Optional billable NAT gateway for Google OAuth HTTPS calls
+    Description: Optional billable NAT gateway for Atlas and Google OAuth outbound calls
   DatabaseClass:
     Type: String
     Default: db.t4g.micro
@@ -21,6 +31,8 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
 Conditions:
+  EnableLegacyPostgres: !Equals [!Ref LegacyPostgresEnabled, "true"]
+  ProtectLegacyPostgres: !Equals [!Ref LegacyPostgresDeletionProtection, "true"]
   EnableInternetEgress: !Equals [!Ref InternetEgress, "true"]
   EnableMultiAZ: !Equals [!Ref MultiAZ, "true"]
 Resources:
@@ -135,6 +147,8 @@ Resources:
   ApplicationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
+      # GroupDescription is immutable. Preserve the original value so this
+      # exported group is updated in place rather than replaced.
       GroupDescription: ECS Fargate outbound access to private database and Secrets Manager
       VpcId: !Ref VPC
       SecurityGroupEgress:
@@ -146,8 +160,13 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          CidrIp: 0.0.0.0/0
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    Condition: EnableLegacyPostgres
     Properties:
       GroupDescription: PostgreSQL access only from Tripling ECS Fargate connector
       VpcId: !Ref VPC
@@ -192,7 +211,8 @@ Resources:
           - Effect: Allow
             Principal: "*"
             Action: secretsmanager:GetSecretValue
-            Resource: !Ref DatabaseSecret
+            # The task IAM role still limits access to the specific configured secrets.
+            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*
   EcrApiEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -229,11 +249,13 @@ Resources:
       RouteTableIds: [!Ref PrivateRouteTable]
   DatabaseSubnets:
     Type: AWS::RDS::DBSubnetGroup
+    Condition: EnableLegacyPostgres
     Properties:
       DBSubnetGroupDescription: Private Tripling database subnets
       SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
   Database:
     Type: AWS::RDS::DBInstance
+    Condition: EnableLegacyPostgres
     DeletionPolicy: Snapshot
     UpdateReplacePolicy: Snapshot
     Properties:
@@ -251,16 +273,21 @@ Resources:
       MasterUsername: tripling_owner
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
       BackupRetentionPeriod: !Ref BackupRetentionDays
-      DeletionProtection: true
+      DeletionProtection: !If [ProtectLegacyPostgres, true, false]
       AutoMinorVersionUpgrade: true
       CopyTagsToSnapshot: true
       EnableCloudwatchLogsExports: [postgresql, upgrade]
 Outputs:
+  InternetEgressIp:
+    Condition: EnableInternetEgress
+    Description: Add only this IPv4 /32 to the Atlas network access list
+    Value: !Ref OAuthEgressAddress
   RepositoryUri:
     Value: !GetAtt Repository.RepositoryUri
     Export:
       Name: !Sub "${AWS::StackName}-RepositoryUri"
   DatabaseHost:
+    Condition: EnableLegacyPostgres
     Value: !GetAtt Database.Endpoint.Address
     Export:
       Name: !Sub "${AWS::StackName}-DatabaseHost"

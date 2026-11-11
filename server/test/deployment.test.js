@@ -30,7 +30,7 @@ const output=v=>process.stdout.write(typeof v==='string'?v:JSON.stringify(v));
 if(operation==='sts get-caller-identity')output(mode==='wrong-account'?'999999999999':'123456789012');
 else if(operation==='cloudformation describe-stacks'){
  const foundation=get('--stack-name')==='tripling-foundation';
- output({Stacks:[{Parameters:[{ParameterKey:'FoundationStack',ParameterValue:'tripling-foundation'}],Outputs:(foundation?{RepositoryUri:'123456789012.dkr.ecr.ap-south-1.amazonaws.com/tripling'}:{ClusterArn:'arn:aws:ecs:ap-south-1:123456789012:cluster/tripling',ServiceArn:'arn:aws:ecs:ap-south-1:123456789012:service/tripling/app',WebsiteUrl:'https://tripling.in'}),}].map(stack=>({...stack,Outputs:Object.entries(stack.Outputs).map(([OutputKey,OutputValue])=>({OutputKey,OutputValue}))}))});
+ output({Stacks:[{Parameters:[{ParameterKey:'FoundationStack',ParameterValue:'tripling-foundation'},...(mode==='postgres-only'?[]:[{ParameterKey:'MongoDBSecretArn',ParameterValue:'arn:aws:secretsmanager:ap-south-1:123456789012:secret:mongo-test'}])],Outputs:(foundation?{RepositoryUri:'123456789012.dkr.ecr.ap-south-1.amazonaws.com/tripling'}:{ClusterArn:'arn:aws:ecs:ap-south-1:123456789012:cluster/tripling',ServiceArn:'arn:aws:ecs:ap-south-1:123456789012:service/tripling/app',WebsiteUrl:'https://tripling.in'}),}].map(stack=>({...stack,Outputs:Object.entries(stack.Outputs).map(([OutputKey,OutputValue])=>({OutputKey,OutputValue}))}))});
 }else if(operation==='ecr get-login-password')output('mock-password');
 else if(operation==='ecr describe-images'){
  if(mode==='denied'){console.error('AccessDeniedException');process.exit(254);}
@@ -100,6 +100,7 @@ else if(operation==='ecs wait'){
 for (const [mode, success] of [
   ["success", true],
   ["denied", false],
+  ["postgres-only", false],
   ["wrong-account", false],
   ["wait-failure", false],
   ["smoke-failure", false],
@@ -109,7 +110,11 @@ for (const [mode, success] of [
     try {
       assert.equal(f.result.status, success ? 0 : 1, f.result.stderr);
       const calls = await f.read("calls");
-      if (mode === "denied" || mode === "wrong-account") {
+      if (
+        mode === "denied" ||
+        mode === "wrong-account" ||
+        mode === "postgres-only"
+      ) {
         assert(!calls.includes("docker build"));
         assert(!calls.includes("ecs update-service"));
         return;
@@ -142,14 +147,19 @@ for (const [mode, success] of [
   });
 }
 
-for (const mode of ["matching", "wrong-version", "draft-policy"]) {
+for (const mode of [
+  "matching",
+  "wrong-version",
+  "draft-policy",
+  "maintenance-delay",
+]) {
   await test(`production smoke validation: ${mode}`, async () => {
     const directory = await mkdtemp(join(tmpdir(), "tripling-smoke-test-"));
     try {
       const mock = join(directory, "fetch.mjs");
       await writeFile(
         mock,
-        `globalThis.fetch=async(url,options)=>{if(options.method&&options.method!=='GET')throw Error('Smoke checks must not write data');const path=new URL(url).pathname;const mode=process.env.MOCK_MODE;const version=mode==='wrong-version'?'old-version':process.env.EXPECTED_VERSION;let value;if(path==='/healthz')value={status:'ok',version};else if(path==='/api/auth/session')value={user:null};else if(path==='/api/bootstrap')value={user:null,trips:[]};else if(path==='/api/legal')value={documents:{terms:{published:mode!=='draft-policy',version:'policy-v1'},privacy:{published:true,version:'policy-v1'}}};else if(path==='/terms'||path==='/privacy')return new Response('Published policy-v1',{status:200});else throw Error('Unexpected URL');return new Response(JSON.stringify(value),{status:200});};`,
+        `let sessionRequests=0;globalThis.fetch=async(url,options)=>{if(options.method&&options.method!=='GET')throw Error('Smoke checks must not write data');const path=new URL(url).pathname;const mode=process.env.MOCK_MODE;if(mode==='maintenance-delay'&&path==='/api/auth/session'&&++sessionRequests<3)return new Response('Maintenance',{status:503});const version=mode==='wrong-version'?'old-version':process.env.EXPECTED_VERSION;let value;if(path==='/healthz')value={status:'ok',version};else if(path==='/api/auth/session')value={user:null};else if(path==='/api/bootstrap')value={user:null,trips:[]};else if(path==='/api/legal')value={documents:{terms:{published:mode!=='draft-policy',version:'policy-v1'},privacy:{published:true,version:'policy-v1'}}};else if(path==='/terms'||path==='/privacy')return new Response('Published policy-v1',{status:200});else throw Error('Unexpected URL');return new Response(JSON.stringify(value),{status:200});};`,
       );
       const result = spawnSync(
         process.execPath,
@@ -161,12 +171,89 @@ for (const mode of ["matching", "wrong-version", "draft-policy"]) {
             APP_ORIGIN: "https://tripling.in",
             EXPECTED_VERSION: "a".repeat(40),
             MOCK_MODE: mode,
+            SMOKE_503_ATTEMPTS: mode === "maintenance-delay" ? "3" : "1",
+            SMOKE_503_DELAY_MS: "0",
           },
         },
       );
-      assert.equal(result.status, mode === "matching" ? 0 : 1, result.stderr);
+      assert.equal(
+        result.status,
+        ["matching", "maintenance-delay"].includes(mode) ? 0 : 1,
+        result.stderr,
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
   });
 }
+
+for (const [mode, expected] of [
+  ["legacy", "infra/foundation.yaml"],
+  ["mongo", "infra/foundation-mongodb.yaml"],
+  ["missing", "infra/foundation-mongodb.yaml"],
+  ["denied", null],
+]) {
+  await test(`foundation selection preserves existing database: ${mode}`, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tripling-foundation-"));
+    try {
+      const aws = join(dir, "aws");
+      await writeFile(
+        aws,
+        `#!/usr/bin/env bash
+case "$FOUNDATION_TEST_MODE" in
+ legacy) printf '%s\\n' database.private.example;;
+ mongo) printf '%s\\n' None;;
+ missing) echo 'An error occurred (ValidationError): Stack does not exist' >&2;exit 254;;
+ denied) echo 'An error occurred (AccessDenied): not authorized' >&2;exit 254;;
+esac
+`,
+        { mode: 0o755 },
+      );
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          "source scripts/foundation-template.sh; select_foundation_template tripling-foundation ap-southeast-2",
+        ],
+        {
+          cwd: source,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: dir + ":" + process.env.PATH,
+            FOUNDATION_TEST_MODE: mode,
+          },
+        },
+      );
+      if (expected) {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, expected);
+      } else {
+        assert.notEqual(result.status, 0);
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /AccessDenied/);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+await test("legacy exported application security group keeps its immutable description", async () => {
+  const template = await readFile(
+    join(source, "infra/foundation.yaml"),
+    "utf8",
+  );
+  const group = template
+    .split("  ApplicationSecurityGroup:\n")[1]
+    .split("  DatabaseSecurityGroup:\n")[0];
+  assert.match(
+    group,
+    /GroupDescription: ECS Fargate outbound access to private database and Secrets Manager\n/,
+  );
+  assert.match(group, /FromPort: 27017\s+ToPort: 27017/);
+  assert.match(
+    template,
+    /ApplicationSecurityGroup:\n    Value: !Ref ApplicationSecurityGroup\n    Export:\n      Name: !Sub "\$\{AWS::StackName\}-ApplicationSecurityGroup"/,
+  );
+});
