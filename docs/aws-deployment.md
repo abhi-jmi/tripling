@@ -61,3 +61,17 @@ Repository **Settings → Secrets and variables → Actions → Variables** need
 For the existing repository, the OIDC template remains `infra/github-oidc.yaml`. Its one-time deployment needs IAM/OIDC permissions. An organization service-control-policy denial must be resolved with the account/organization administrator; neither a GitHub variable nor a static key overrides it. Do not put database credentials into these variables.
 
 The release script refuses a service stack without `MongoDBSecretArn`, preserving the PostgreSQL deployment. Only the explicit one-time service update performs the database configuration switch. Later releases preserve the secret ARN and task-role configuration. Secret rotation requires new tasks to reload the secret.
+
+## Read-only connectivity check before migration
+
+After allowing the NAT IP in Atlas, run this from the feature-branch checkout in CloudShell. Set `TRIPLING_MONGODB_SECRET_ARN` to the existing secret ARN, not its value:
+
+```bash
+AWS_REGION=ap-southeast-2 TRIPLING_MONGODB_SECRET_ARN=YOUR_MONGODB_SECRET_ARN TRIPLING_DEPLOY_APPROVED=yes bash scripts/check-mongodb-aws.sh
+```
+
+This builds a separate immutable check image, creates the `tripling-mongodb-check` stack with narrowly scoped task/execution roles and a seven-day log group, and runs one short-lived billable Fargate task using the running service's private subnets/security groups. It does not update the service, read PostgreSQL, create collections, publish policies, or write MongoDB records. It fetches the URI through its task role and tests verified TLS, replica-set discovery and projected read access to `tripling.trips`; it logs no credentials or row contents.
+
+Success prints `MONGODB_CONNECTION_OK` and confirms task exit code zero. This proves the separate check task can connect, not that the website has switched databases. Continue with the controlled data transfer before changing the website. An authentication error may mean the saved password is incorrect; a network error requires checking the Atlas allowlist, NAT route and DNS. Do not post the URI/password when requesting help.
+
+The command leaves the website intact. After migration, the separate check stack can be removed with `aws cloudformation delete-stack --stack-name tripling-mongodb-check --region ap-southeast-2`; this removes only its own roles/task definition/log group, not the application stacks or database. The tagged ECR check image can be removed separately when no longer needed.
