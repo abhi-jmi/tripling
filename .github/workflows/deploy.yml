@@ -55,7 +55,7 @@ jobs:
           python-version: "3.12"
       - run: pip install 'cfn-lint==1.60.0'
       - run: cfn-lint infra/*.yaml
-      - run: bash -n scripts/deploy-aws.sh scripts/deploy-release.sh scripts/deploy-foundation.sh scripts/foundation-template.sh scripts/check-mongodb-aws.sh
+      - run: bash -n scripts/deploy-aws.sh scripts/deploy-release.sh scripts/deploy-foundation.sh scripts/foundation-template.sh scripts/check-mongodb-aws.sh scripts/preflight-mongodb-aws.sh
   configuration:
     name: Check deployment connection
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

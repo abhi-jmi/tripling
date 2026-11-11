@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Read-only PostgreSQL and MongoDB transfer preflight; no website update or data transfer.
+Parameters:
+  ImageUri:
+    Type: String
+    AllowedPattern: '[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/.+@sha256:[a-f0-9]{64}'
+  RepositoryArn:
+    Type: String
+    AllowedPattern: "arn:aws:ecr:[a-z0-9-]+:[0-9]{12}:repository/.+"
+  MongoDBSecretArn:
+    Type: String
+    AllowedPattern: "arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
+  SourceDatabaseSecretArn:
+    Type: String
+    AllowedPattern: "arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
+  SourceDatabaseHost:
+    Type: String
+    AllowedPattern: "[a-zA-Z0-9.-]+"
+  MongoDBDatabase:
+    Type: String
+    Default: tripling
+    AllowedPattern: "[a-zA-Z0-9_-]{1,63}"
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+  CheckRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadOnlyMongoDBConnectionSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref MongoDBSecretArn, !Ref SourceDatabaseSecretArn]
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullCheckImageAndWriteCheckLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  [
+                    ecr:BatchGetImage,
+                    ecr:GetDownloadUrlForLayer,
+                    ecr:BatchCheckLayerAvailability,
+                  ]
+                Resource: !Ref RepositoryArn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt LogGroup.Arn
+  Task:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AWS::StackName}-check"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      TaskRoleArn: !GetAtt CheckRole.Arn
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: tripling
+          Image: !Ref ImageUri
+          Essential: true
+          ReadonlyRootFilesystem: true
+          EntryPoint: [node, scripts/mongo-preflight.mjs]
+          Command: []
+          # The application image has an HTTP healthcheck; this task is not a web server.
+          HealthCheck:
+            Command: [CMD, node, -e, "process.exit(0)"]
+            Interval: 30
+            Timeout: 5
+            Retries: 1
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: MONGODB_SECRET_ARN
+              Value: !Ref MongoDBSecretArn
+            - Name: PG_SOURCE_SECRET_ARN
+              Value: !Ref SourceDatabaseSecretArn
+            - Name: PG_SOURCE_HOST
+              Value: !Ref SourceDatabaseHost
+            - Name: PG_SOURCE_DATABASE
+              Value: tripling
+            - Name: PG_SOURCE_SSL_CA
+              Value: /app/certs/global-bundle.pem
+            - Name: MONGODB_DATABASE
+              Value: !Ref MongoDBDatabase
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: check
+Outputs:
+  TaskDefinitionArn:
+    Value: !Ref Task
+  LogGroupName:
+    Value: !Ref LogGroup

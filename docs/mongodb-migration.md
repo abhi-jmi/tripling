@@ -47,3 +47,17 @@ Before any new MongoDB writes, you can stop the new tasks, restore the previous 
 **After new MongoDB writes, PostgreSQL is stale.** Freeze writes again, export/retain MongoDB changes, and reconcile them before any reverse cutover. A simple old-image rollback would lose those new changes from the user's view. The CI release script retains its normal rollback for later MongoDB-to-MongoDB application releases; this does not provide cross-database replication.
 
 Keep RDS and its backups until an agreed acceptance/retention period is complete. Its ongoing AWS charges continue. Retirement is a separate action requiring backup verification, export/reference cleanup and approval; the templates/scripts intentionally do not remove the existing RDS resources during this migration.
+
+## Automated read-only AWS preflight
+
+Once `check-mongodb-aws.sh` succeeds, run this from the migration branch in CloudShell:
+
+```bash
+AWS_REGION=ap-southeast-2 TRIPLING_MONGODB_SECRET_ARN=YOUR_MONGODB_SECRET_ARN TRIPLING_DEPLOY_APPROVED=yes bash scripts/preflight-mongodb-aws.sh
+```
+
+This builds the separate migration image (including its export-only PostgreSQL dependency), creates the isolated `tripling-mongodb-preflight` stack, and runs one short-lived billable task using the existing service's private networking. It reads the source host and secret ARN from the foundation outputs, grants its own role read access to only the two database secrets, and uses verified TLS for both databases. It does not modify the running service, either database, or their schemas.
+
+The task validates an in-memory, repeatable-read PostgreSQL snapshot and checks that the selected MongoDB application database contains no application records. Only source/target counts and a fixed status are logged; account hashes, messages, credentials and snapshots are not logged or saved. `MIGRATION_PREFLIGHT_OK` means the source can be exported and the target was empty at check time. It is not the final export: all writers must still be paused before the actual migration and the checks must be repeated then. Do not delete existing target data to bypass `DESTINATION_NOT_EMPTY`; investigate it first.
+
+PostgreSQL export credentials/TLS configuration are shared between the local transfer CLI and AWS preflight through `scripts/postgres-source.mjs`. These files stay out of the normal runtime image.
