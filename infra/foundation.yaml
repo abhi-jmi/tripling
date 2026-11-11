@@ -1,6 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling networking and image repository, with retained legacy PostgreSQL infrastructure for safe MongoDB cutover. Creates billable resources.
 Parameters:
+  LegacyPostgresEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Set false only after verified MongoDB cutover to snapshot and remove legacy RDS
+  LegacyPostgresDeletionProtection:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Disable in a separate successful update before retiring legacy RDS
   InternetEgress:
     Type: String
     Default: "false"
@@ -21,6 +31,8 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
 Conditions:
+  EnableLegacyPostgres: !Equals [!Ref LegacyPostgresEnabled, "true"]
+  ProtectLegacyPostgres: !Equals [!Ref LegacyPostgresDeletionProtection, "true"]
   EnableInternetEgress: !Equals [!Ref InternetEgress, "true"]
   EnableMultiAZ: !Equals [!Ref MultiAZ, "true"]
 Resources:
@@ -154,6 +166,7 @@ Resources:
           CidrIp: 0.0.0.0/0
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    Condition: EnableLegacyPostgres
     Properties:
       GroupDescription: PostgreSQL access only from Tripling ECS Fargate connector
       VpcId: !Ref VPC
@@ -236,11 +249,13 @@ Resources:
       RouteTableIds: [!Ref PrivateRouteTable]
   DatabaseSubnets:
     Type: AWS::RDS::DBSubnetGroup
+    Condition: EnableLegacyPostgres
     Properties:
       DBSubnetGroupDescription: Private Tripling database subnets
       SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
   Database:
     Type: AWS::RDS::DBInstance
+    Condition: EnableLegacyPostgres
     DeletionPolicy: Snapshot
     UpdateReplacePolicy: Snapshot
     Properties:
@@ -258,7 +273,7 @@ Resources:
       MasterUsername: tripling_owner
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
       BackupRetentionPeriod: !Ref BackupRetentionDays
-      DeletionProtection: true
+      DeletionProtection: !If [ProtectLegacyPostgres, true, false]
       AutoMinorVersionUpgrade: true
       CopyTagsToSnapshot: true
       EnableCloudwatchLogsExports: [postgresql, upgrade]
@@ -272,6 +287,7 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-RepositoryUri"
   DatabaseHost:
+    Condition: EnableLegacyPostgres
     Value: !GetAtt Database.Endpoint.Address
     Export:
       Name: !Sub "${AWS::StackName}-DatabaseHost"

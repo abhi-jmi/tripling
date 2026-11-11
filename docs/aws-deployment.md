@@ -88,3 +88,30 @@ and healthy load balancer targets before removing the dedicated maintenance
 rule. HTTPS smoke checks retry temporary 503 responses during rule propagation.
 On failure it attempts to restore maintenance; it never imports data or deploys
 an application image. Successful output is `MONGODB_CUTOVER_COMPLETE`.
+
+### Remove legacy PostgreSQL after accepting the MongoDB cutover
+
+Run `scripts/retire-postgres-aws.sh` from the current MongoDB branch in AWS
+CloudShell. Without `TRIPLING_RETIRE_POSTGRES_APPROVED=yes`, it performs read-only
+checks and identifies the RDS instance. With that variable set, it checks the
+current MongoDB task and public HTTPS APIs, confirms that the PostgreSQL hostname
+export has no importing stacks, then executes two restricted CloudFormation
+updates: disable deletion protection, followed by removal of the legacy RDS
+instance, its subnet group and its security group. CloudFormation's existing
+`DeletionPolicy: Snapshot` preserves a final snapshot. The website is not placed
+in maintenance and the shared VPC, NAT, ECS, ALB, repository and Atlas secret stay
+in place. The script refuses any unrelated resource changes or replacements.
+
+The foundation remembers `LegacyPostgresEnabled=false`; later deployments use the
+same foundation template and preserve that parameter, so they do not recreate
+RDS. The original PostgreSQL secret remains for snapshot recovery and also
+identifies this original foundation template. Final snapshots, old log groups,
+migration workers and retained secrets are not deleted by this command; retained
+storage/secrets may incur charges. Do not delete the foundation stack or run the
+original PostgreSQL branch against this stack. Keep `work/mongodb-cutover` and
+`work/postgres-retirement` for the migration record.
+
+Success prints `POSTGRES_RETIRED` after the database removal and HTTPS checks.
+If an AWS update fails, keep the output and inspect the foundation stack events;
+do not force-delete shared network resources. The final snapshot is a historical
+copy, not a current replacement for the MongoDB database.
