@@ -12,6 +12,8 @@ docker compose up --build
 
 Open `http://localhost:3000`. Compose starts MongoDB 8 as a single-node replica set, initializes it, and starts the Node.js application. This local database has no authentication and is exposed only on loopback; use authenticated Atlas with verified TLS for production.
 
+MongoDB 8.0 needs a supported host kernel; the current build rejects Linux 6.19+. CI uses Ubuntu 22.04 for its database runner. On an incompatible local kernel, use Atlas or a supported MongoDB host rather than bypassing the server check.
+
 For a separate Node.js process, run `npm ci`, copy `.env.example` to untracked `.env`, configure a MongoDB replica set or Atlas URI, then run `npm start`. The example `directConnection=true` lets a host process access the local Compose database without resolving its internal `mongo` hostname. Inside Compose the app uses `mongo` directly.
 
 `npm run db:setup` initializes collections, unique indexes, expiry indexes and the location catalog. Startup also runs this idempotent setup. It does not drop collections or manufacture traveler records.

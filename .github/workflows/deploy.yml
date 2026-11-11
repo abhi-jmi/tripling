@@ -12,7 +12,8 @@ concurrency:
 jobs:
   test:
     name: MongoDB and application checks
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 rejects the 6.19+ kernel on the current ubuntu-latest image.
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
