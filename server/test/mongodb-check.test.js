@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { checkMongoConnection } from "../check-mongodb.js";
+import { mongoFailureDetails } from "../mongo-diagnostics.js";
 import { mkdtemp, writeFile, mkdir, cp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,3 +98,36 @@ else {console.error('Unexpected AWS operation '+op);process.exit(1);}
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+await test("MongoDB diagnostics inspect nested failures without exposing credentials", () => {
+  const secret = "mongodb+srv://private-user:private-password@hidden.example/";
+  const tls = Object.assign(new Error("TLS handshake failed " + secret), {
+    code: "ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR",
+    name: "MongoNetworkError",
+  });
+  const root = Object.assign(new Error("Cannot connect " + secret), {
+    name: "MongoServerSelectionError",
+    reason: { servers: new Map([["hidden.example", { error: tls }]]) },
+  });
+  const details = mongoFailureDetails(root);
+  assert(details.categories.includes("tls"));
+  assert(details.codes.includes("ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR"));
+  assert(!JSON.stringify(details).includes("private"));
+  assert(!JSON.stringify(details).includes("hidden.example"));
+  assert(
+    mongoFailureDetails({
+      code: 18,
+      name: "MongoServerError",
+    }).categories.includes("authentication"),
+  );
+  assert(
+    mongoFailureDetails({ cause: { code: "ENOTFOUND" } }).categories.includes(
+      "dns",
+    ),
+  );
+  assert(
+    mongoFailureDetails({ cause: { code: "ETIMEDOUT" } }).categories.includes(
+      "network",
+    ),
+  );
+});

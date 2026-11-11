@@ -1,4 +1,5 @@
 import { MongoClient } from "mongodb";
+import { mongoFailureDetails } from "./mongo-diagnostics.js";
 import { randomUUID } from "node:crypto";
 import {
   SecretsManagerClient,
@@ -69,7 +70,10 @@ export async function createDatabase(env = process.env) {
       new Error(
         "MongoDB connection failed. Check credentials, network access, TLS and replica-set configuration.",
       ),
-      { code: e.code || "MONGODB_UNAVAILABLE" },
+      {
+        code: e.code || "MONGODB_UNAVAILABLE",
+        diagnostic: mongoFailureDetails(e),
+      },
     );
   }
 }
