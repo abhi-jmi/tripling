@@ -22,6 +22,7 @@ jobs:
           cache: npm
       - name: Start MongoDB replica set
         run: |
+          trap 'docker logs --tail 80 tripling-mongo; docker inspect --format "{{json .State}}" tripling-mongo' ERR
           docker run -d --name tripling-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet tripling-rs --bind_ip_all
           for attempt in {1..30}; do
             if docker exec tripling-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then break; fi
