@@ -75,3 +75,16 @@ This builds a separate immutable check image, creates the `tripling-mongodb-chec
 Success prints `MONGODB_CONNECTION_OK` and confirms task exit code zero. This proves the separate check task can connect, not that the website has switched databases. Continue with the controlled data transfer before changing the website. An authentication error may mean the saved password is incorrect; a network error requires checking the Atlas allowlist, NAT route and DNS. Do not post the URI/password when requesting help.
 
 The command leaves the website intact. After migration, the separate check stack can be removed with `aws cloudformation delete-stack --stack-name tripling-mongodb-check --region ap-southeast-2`; this removes only its own roles/task definition/log group, not the application stacks or database. The tagged ECR check image can be removed separately when no longer needed.
+
+### Recover an interrupted final reopening
+
+If cutover reports `MONGODB_FINAL_VERIFICATION_OK` and then stops in phase
+`opening` with a public HTTP 503, keep `work/mongodb-cutover` and both databases.
+Do not repeat the import or return traffic to PostgreSQL. Pull the latest branch
+and run `scripts/reopen-mongodb-aws.sh` with `AWS_REGION`,
+`TRIPLING_MONGODB_SECRET_ARN`, and `TRIPLING_DEPLOY_APPROVED=yes`.
+This checks the saved verification, current MongoDB release, service stability,
+and healthy load balancer targets before removing the dedicated maintenance
+rule. HTTPS smoke checks retry temporary 503 responses during rule propagation.
+On failure it attempts to restore maintenance; it never imports data or deploys
+an application image. Successful output is `MONGODB_CUTOVER_COMPLETE`.

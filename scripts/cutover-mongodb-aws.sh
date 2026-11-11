@@ -137,6 +137,6 @@ aws elbv2 delete-rule --rule-arn "$maintenance_rule" --region "$region";maintena
 aws elbv2 delete-rule --rule-arn "$rule" --region "$region";rule=''
 aws ecs update-service --cluster "$cluster" --service "$service" --desired-count "$old_desired" --region "$region" >/dev/null
 restore_scaling
-APP_ORIGIN="$website" EXPECTED_VERSION="$sha" node scripts/smoke-deployment.mjs
+SMOKE_503_ATTEMPTS=30 SMOKE_503_DELAY_MS=2000 APP_ORIGIN="$website" EXPECTED_VERSION="$sha" node scripts/smoke-deployment.mjs
 phase=complete;save_phase
 printf '%s\n' 'MONGODB_CUTOVER_COMPLETE: The website is using MongoDB. Original PostgreSQL is retained; old sessions require sign-in again.'
