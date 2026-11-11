@@ -1,9 +1,9 @@
-import { createPool } from "./db.js";
+import { createDatabase } from "./db.js";
 import { migrate } from "./migrate.js";
-const pool = await createPool();
+const pool = await createDatabase();
 try {
   await migrate(pool);
-  console.log("Database migrations applied.");
+  console.log("MongoDB collections and indexes are ready.");
 } finally {
-  await pool.end();
+  await pool.close();
 }

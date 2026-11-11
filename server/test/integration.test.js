@@ -1,28 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPool } from "../db.js";
-import { migrate } from "../migrate.js";
+import { createDatabase, validateMongoConfiguration } from "../db.js";
+import { migrate, COLLECTIONS } from "../migrate.js";
 import { createApp } from "../app.js";
 import { publishLegalDocuments, legalConfiguration } from "../legal.js";
 import { cookieOptions } from "../auth.js";
 
-const connectionString = process.env.TEST_DATABASE_URL;
-if (!connectionString)
+const connectionString = process.env.TEST_MONGODB_URI;
+const databaseName = process.env.TEST_MONGODB_DATABASE || "tripling_test";
+if (!connectionString || !databaseName.endsWith("_test"))
   throw new Error(
-    "Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test.",
+    "Set TEST_MONGODB_URI and a dedicated TEST_MONGODB_DATABASE ending in _test.",
   );
-if (!new URL(connectionString).pathname.endsWith("_test"))
-  throw new Error(
-    "Refusing to reset a database whose name does not end in _test.",
-  );
-const pool = await createPool({
-  DATABASE_URL: connectionString,
+const pool = await createDatabase({
+  MONGODB_URI: connectionString,
+  MONGODB_DATABASE: databaseName,
   NODE_ENV: "test",
 });
 await migrate(pool);
-await pool.query(
-  "TRUNCATE users,auth_rate_limits,legal_documents RESTART IDENTITY CASCADE",
-);
+for (const name of COLLECTIONS)
+  if (name !== "location_catalog") await pool.removeMany(name, {});
+async function records(name, filter) {
+  const rows = await pool.all(name, filter);
+  return { rows, rowCount: rows.length };
+}
 await publishLegalDocuments(pool, {
   NODE_ENV: "test",
   LEGAL_OPERATOR_NAME: " ",
@@ -192,11 +193,8 @@ try {
           409,
         );
         assert.equal(
-          (
-            await pool.query(
-              "SELECT id FROM users WHERE email='legal-test@example.com'",
-            )
-          ).rowCount,
+          (await records("users", { email: "legal-test@example.com" }))
+            .rowCount,
           0,
         );
       },
@@ -246,26 +244,16 @@ try {
         outsiderUser = await outsider.signup("outsider@example.com");
         assert.equal(ownerUser.email, "owner@example.com");
         assert.equal(
-          (
-            await pool.query(
-              "SELECT * FROM legal_acceptances WHERE user_id=$1",
-              [ownerUser.id],
-            )
-          ).rowCount,
+          (await records("legal_acceptances", { user_id: ownerUser.id }))
+            .rowCount,
           2,
         );
         const session = await owner.request("/auth/session");
         assert.equal(session.body.user.id, ownerUser.id);
-        const hash = await pool.query(
-          "SELECT password_hash FROM users WHERE id=$1",
-          [ownerUser.id],
-        );
+        const hash = await records("users", { id: ownerUser.id });
         assert.match(hash.rows[0].password_hash, /^scrypt-v1\$/);
         assert.notEqual(hash.rows[0].password_hash, "A long test passphrase!");
-        const tokens = await pool.query(
-          "SELECT token_hash FROM sessions WHERE user_id=$1",
-          [ownerUser.id],
-        );
+        const tokens = await records("sessions", { user_id: ownerUser.id });
         assert.notEqual(tokens.rows[0].token_hash, owner.cookie.split("=")[1]);
         assert.equal(cookieOptions(true).secure, true);
         assert.equal(cookieOptions(true).httpOnly, true);
@@ -290,10 +278,7 @@ try {
         assert.equal(r.status, 200);
         assert.match(r.headers.get("set-cookie"), /HttpOnly/);
         assert.match(r.headers.get("set-cookie"), /SameSite=Lax/);
-        const rows = await pool.query(
-          "SELECT * FROM sessions WHERE user_id=$1",
-          [ownerUser.id],
-        );
+        const rows = await records("sessions", { user_id: ownerUser.id });
         assert.equal(rows.rowCount, 1);
       },
     );
@@ -314,15 +299,12 @@ try {
         assert.equal(missing.status, 403);
       },
     );
-    await t.test("profiles are stored in PostgreSQL", async () => {
+    await t.test("profiles are stored in MongoDB", async () => {
       await owner.profile("Organizer", "woman");
       await alice.profile("Alice", "woman");
       await bob.profile("Bob", "other");
       await outsider.profile("Outsider", "other");
-      const rows = await pool.query(
-        "SELECT display_name FROM users WHERE id=$1",
-        [ownerUser.id],
-      );
+      const rows = await records("users", { id: ownerUser.id });
       assert.equal(rows.rows[0].display_name, "Organizer Traveler");
     });
     await t.test("anonymous users cannot mutate records", async () => {
@@ -336,10 +318,7 @@ try {
       const r = await owner.request("/trips", { method: "POST", body: trip });
       assert.equal(r.status, 201);
       tripId = r.body.id;
-      const members = await pool.query(
-        "SELECT * FROM trip_members WHERE trip_id=$1",
-        [tripId],
-      );
+      const members = await records("trip_members", { trip_id: tripId });
       assert.equal(members.rowCount, 1);
       const publicFeed = await anonymous.request("/bootstrap");
       assert.equal(publicFeed.body.trips.length, 1);
@@ -427,10 +406,7 @@ try {
         acceptedUser = aliceAccepted ? aliceUser : bobUser;
         rejected = aliceAccepted ? bob : alice;
         rejectedUser = aliceAccepted ? bobUser : aliceUser;
-        const members = await pool.query(
-          "SELECT * FROM trip_members WHERE trip_id=$1",
-          [tripId],
-        );
+        const members = await records("trip_members", { trip_id: tripId });
         assert.equal(members.rowCount, 2);
         const feed = await owner.request("/bootstrap");
         assert.equal(feed.body.trips.find((t) => t.id === tripId).seats, 0);
@@ -581,13 +557,20 @@ try {
           },
         });
         assert.equal(early.status, 400);
-        await pool.query(
-          "UPDATE trips SET starts_on='2020-01-01',ends_on='2020-01-03' WHERE id=$1",
-          [womenTripId],
+        await pool.update(
+          "trips",
+          { id: womenTripId },
+          { $set: { starts_on: "2020-01-01", ends_on: "2020-01-03" } },
         );
-        await pool.query(
-          "UPDATE trip_participants SET first_joined_at='2019-12-31',last_joined_at='2019-12-31' WHERE trip_id=$1",
-          [womenTripId],
+        await pool.updateMany(
+          "trip_participants",
+          { trip_id: womenTripId },
+          {
+            $set: {
+              first_joined_at: new Date("2019-12-31"),
+              last_joined_at: new Date("2019-12-31"),
+            },
+          },
         );
         const r = await alice.request(`/trips/${womenTripId}/reviews`, {
           method: "POST",
@@ -630,11 +613,7 @@ try {
       const feed = await outsider.request("/bootstrap");
       assert(!feed.body.trips.some((t) => t.id === tripId));
       assert.equal(
-        (
-          await pool.query("SELECT * FROM reports WHERE reporter_id=$1", [
-            outsiderUser.id,
-          ])
-        ).rowCount,
+        (await records("reports", { reporter_id: outsiderUser.id })).rowCount,
         1,
       );
       assert(
@@ -707,9 +686,10 @@ try {
           assert.equal(invalid.status, 400);
           assert.match(invalid.body.error, /name.*required/i);
         }
-        await pool.query(
-          "UPDATE users SET first_name=NULL,last_name=NULL WHERE id=$1",
-          [outsiderUser.id],
+        await pool.update(
+          "users",
+          { id: outsiderUser.id },
+          { $set: { first_name: null, last_name: null } },
         );
         assert.equal(
           (await outsider.request("/trips", { method: "POST", body: trip }))
@@ -1065,11 +1045,8 @@ try {
         });
         assert.equal(complete.status, 201);
         assert.equal(complete.body.user.googleLinked, true);
-        const dbUser = (
-          await pool.query("SELECT password_hash FROM users WHERE email=$1", [
-            "google@example.com",
-          ])
-        ).rows[0];
+        const dbUser = (await records("users", { email: "google@example.com" }))
+          .rows[0];
         assert.equal(dbUser.password_hash, null);
         const linked = await callback(await start());
         assert.equal(linked.headers.get("location"), "/#discover");
@@ -1124,11 +1101,7 @@ try {
         alice.cookie = cookie;
         assert.equal((await alice.request("/auth/session")).body.user, null);
         assert.equal(
-          (
-            await pool.query("SELECT * FROM saved_trips WHERE user_id=$1", [
-              aliceUser.id,
-            ])
-          ).rowCount,
+          (await records("saved_trips", { user_id: aliceUser.id })).rowCount,
           1,
         );
       },
@@ -1150,18 +1123,26 @@ try {
       "migration reruns are safe and production TLS is mandatory",
       async () => {
         await migrate(pool);
-        await assert.rejects(
+        assert.throws(
           () =>
-            createPool({
-              DATABASE_URL: connectionString,
-              NODE_ENV: "production",
-            }),
-          /DB_SSL_CA/,
+            validateMongoConfiguration(
+              { NODE_ENV: "production" },
+              "mongodb://localhost/?tls=false",
+            ),
+          /verified TLS/,
+        );
+        assert.throws(
+          () =>
+            validateMongoConfiguration(
+              { NODE_ENV: "production" },
+              "mongodb://localhost/?tlsAllowInvalidCertificates=true",
+            ),
+          /verified TLS/,
         );
       },
     );
   });
 } finally {
   await new Promise((r) => server.close(r));
-  await pool.end();
+  await pool.close();
 }

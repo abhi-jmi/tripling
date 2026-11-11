@@ -1,4 +1,4 @@
-import { createPool } from "./db.js";
+import { createDatabase } from "./db.js";
 import { migrate } from "./migrate.js";
 import { publishLegalDocuments, legalConfiguration } from "./legal.js";
 import { createApp } from "./app.js";
@@ -35,7 +35,7 @@ if (process.env.GOOGLE_OAUTH_SECRET_ARN) {
   }
 }
 legalConfiguration();
-const pool = await createPool();
+const pool = await createDatabase();
 await migrate(pool);
 await publishLegalDocuments(pool);
 const server = createApp(pool).listen(
@@ -54,7 +54,7 @@ function shutdown() {
   if (stopping) return;
   stopping = true;
   server.close(async () => {
-    await pool.end();
+    await pool.close();
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 10000).unref();

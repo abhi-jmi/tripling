@@ -1,11 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Tripling private PostgreSQL database, image repository, and application networking. Creates billable resources.
+Description: Tripling networking and image repository, with retained legacy PostgreSQL infrastructure for safe MongoDB cutover. Creates billable resources.
 Parameters:
   InternetEgress:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
-    Description: Optional billable NAT gateway for Google OAuth HTTPS calls
+    Description: Optional billable NAT gateway for Atlas and Google OAuth outbound calls
   DatabaseClass:
     Type: String
     Default: db.t4g.micro
@@ -135,7 +135,7 @@ Resources:
   ApplicationSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: ECS Fargate outbound access to private database and Secrets Manager
+      GroupDescription: ECS Fargate outbound access to Atlas, legacy database and Secrets Manager
       VpcId: !Ref VPC
       SecurityGroupEgress:
         - IpProtocol: tcp
@@ -145,6 +145,10 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
           CidrIp: 0.0.0.0/0
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -192,7 +196,8 @@ Resources:
           - Effect: Allow
             Principal: "*"
             Action: secretsmanager:GetSecretValue
-            Resource: !Ref DatabaseSecret
+            # The task IAM role still limits access to the specific configured secrets.
+            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*
   EcrApiEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
@@ -256,6 +261,10 @@ Resources:
       CopyTagsToSnapshot: true
       EnableCloudwatchLogsExports: [postgresql, upgrade]
 Outputs:
+  InternetEgressIp:
+    Condition: EnableInternetEgress
+    Description: Add only this IPv4 /32 to the Atlas network access list
+    Value: !Ref OAuthEgressAddress
   RepositoryUri:
     Value: !GetAtt Repository.RepositoryUri
     Export:

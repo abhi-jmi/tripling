@@ -1,6 +1,6 @@
 {
   "name": "tripling",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,18 +11,23 @@
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "migrate": "node --env-file-if-exists=.env server/migrate-cli.js",
     "test": "node --test server/test/*.test.js",
-    "check": "node --check server/app.js && node --check server/index.js && node --check dist/app.js && node --check dist/auth.js && node --check server/legal.js && node --check scripts/smoke-deployment.mjs && node --check server/google-auth.js && node --check server/trips.js && node --check server/blocks.js && node --check dist/locations.js",
-    "test:browser": "node scripts/check-browser.mjs"
+    "check": "node scripts/check.mjs",
+    "test:browser": "node scripts/check-browser.mjs",
+    "db:setup": "node --env-file-if-exists=.env server/migrate-cli.js",
+    "data:export": "node --env-file-if-exists=.env scripts/migrate-postgres-to-mongo.mjs export",
+    "data:import": "node --env-file-if-exists=.env scripts/migrate-postgres-to-mongo.mjs import",
+    "data:verify": "node --env-file-if-exists=.env scripts/migrate-postgres-to-mongo.mjs verify"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1165.0",
     "express": "^5.3.0",
     "helmet": "^8.3.0",
+    "mongodb": "^6.22.0",
     "openid-client": "^6.8.9",
-    "pg": "^8.23.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "pg": "^8.23.1",
     "playwright-core": "^1.65.0"
   }
 }

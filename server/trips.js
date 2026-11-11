@@ -1,12 +1,15 @@
 import { z } from "zod";
-import { transaction } from "./db.js";
+import { transaction, lockTrip, lockTravelers } from "./db.js";
 import {
-  TODAY_SQL,
   travelDate,
   profileComplete,
   httpError,
   requireParticipant,
   blockedWithCrew,
+  addMember,
+  removeMember,
+  prefix,
+  reviewEligible,
 } from "./travel-rules.js";
 const fail = (s, m) => {
   throw httpError(s, m);
@@ -40,13 +43,6 @@ const tripSchema = z
   .refine((t) => t.going + t.seats <= 20, {
     message: "Groups can have at most 20 travelers.",
   });
-const selectTrips = `SELECT t.*,COALESCE(o.display_name,'No active organizer') AS host,c.display_name AS creator,
- (SELECT count(*)::int FROM trip_members m WHERE m.trip_id=t.id) AS member_count,
- EXISTS(SELECT 1 FROM trip_members m WHERE m.trip_id=t.id AND m.user_id=$1) AS is_member,
- EXISTS(SELECT 1 FROM trip_participants p WHERE p.trip_id=t.id AND p.user_id=$1) AS participated,
- (SELECT count(*)::int FROM reviews r WHERE r.trip_id=t.id) AS review_count,
- (SELECT round(avg(r.rating),1)::float FROM reviews r WHERE r.trip_id=t.id) AS average_rating
- FROM trips t JOIN users c ON c.id=t.owner_id LEFT JOIN users o ON o.id=t.organizer_id`;
 function serialize(t) {
   const lifecycle =
     t.status === "canceled"
@@ -104,20 +100,22 @@ function requireNames(req) {
     );
 }
 async function notify(db, user, trip, body) {
-  await db.query(
-    "INSERT INTO notifications(user_id,trip_id,body) VALUES($1,$2,$3)",
-    [user, trip, body],
-  );
+  await db.insert("notifications", { user_id: user, trip_id: trip, body });
 }
-async function reviewEligible(db, trip, user) {
-  return (
+const userMap = async (db, ids) =>
+  new Map(
     (
-      await db.query(
-        `SELECT 1 FROM trip_participants p JOIN trips t ON t.id=p.trip_id WHERE p.trip_id=$1 AND p.user_id=$2 AND (p.first_joined_at AT TIME ZONE 'Asia/Kolkata')::date<=t.ends_on AND (p.left_at IS NULL OR (p.left_at AT TIME ZONE 'Asia/Kolkata')::date>=t.starts_on)`,
-        [trip, user],
+      await db.all(
+        "users",
+        { id: { $in: [...new Set(ids.filter(Boolean))] } },
+        { projection: { _id: 0, id: 1, display_name: 1, bio: 1 } },
       )
-    ).rowCount > 0
+    ).map((u) => [u.id, u]),
   );
+async function crewLocks(db, id, user) {
+  const crew = await db.all("trip_members", { trip_id: id });
+  await lockTravelers(db, [user, ...crew.map((m) => m.user_id)]);
+  return crew;
 }
 export function registerTripRoutes(
   app,
@@ -126,62 +124,150 @@ export function registerTripRoutes(
 ) {
   app.get("/api/locations", async (req, res) => {
     const q = z
-      .string()
-      .trim()
-      .max(60)
-      .parse(req.query.q || "");
-    const r = await pool.query(
-      `SELECT name FROM (SELECT DISTINCT ON(lower(name)) name FROM (SELECT name FROM location_catalog UNION ALL SELECT destination AS name FROM trips UNION ALL SELECT from_city AS name FROM trips) all_names WHERE lower(left(name,char_length($1)))=lower($1) ORDER BY lower(name),name) matches ORDER BY lower(name) LIMIT 15`,
-      [q],
-    );
-    res.json({ locations: r.rows.map((r) => r.name) });
+        .string()
+        .trim()
+        .max(60)
+        .parse(req.query.q || ""),
+      pattern = prefix(q);
+    const [catalog, trips] = await Promise.all([
+      pool.all("location_catalog", { name: pattern }),
+      pool.all(
+        "trips",
+        { $or: [{ destination: pattern }, { from_city: pattern }] },
+        { projection: { _id: 0, destination: 1, from_city: 1 } },
+      ),
+    ]);
+    const names = new Map();
+    for (const name of [
+      ...catalog.map((l) => l.name),
+      ...trips.flatMap((t) => [t.destination, t.from_city]),
+    ].sort((a, b) => a.localeCompare(b)))
+      if (pattern.test(name) && !names.has(name.toLowerCase()))
+        names.set(name.toLowerCase(), name);
+    res.json({
+      locations: [...names.values()]
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+        .slice(0, 15),
+    });
   });
   app.get("/api/bootstrap", async (req, res) => {
     const id = req.user?.id || null;
-    const r = await pool.query(
-      `${selectTrips} WHERE (NOT EXISTS(SELECT 1 FROM hidden_trips h WHERE h.trip_id=t.id AND h.user_id=$1) OR EXISTS(SELECT 1 FROM trip_participants p WHERE p.trip_id=t.id AND p.user_id=$1)) ORDER BY t.created_at DESC`,
-      [id],
+    const [records, members, participants, reviews, hidden] = await Promise.all(
+      [
+        pool.all("trips", {}, { sort: { created_at: -1, id: 1 } }),
+        pool.all("trip_members"),
+        id ? pool.all("trip_participants", { user_id: id }) : [],
+        pool.all("reviews"),
+        id ? pool.all("hidden_trips", { user_id: id }) : [],
+      ],
     );
+    const users = await userMap(
+      pool,
+      records.flatMap((t) => [t.owner_id, t.organizer_id]),
+    );
+    const tripList = records
+      .filter(
+        (t) =>
+          !hidden.some((h) => h.trip_id === t.id) ||
+          participants.some((p) => p.trip_id === t.id),
+      )
+      .map((t) => {
+        const ratings = reviews.filter((r) => r.trip_id === t.id);
+        return serialize({
+          ...t,
+          host:
+            users.get(t.organizer_id)?.display_name || "No active organizer",
+          creator: users.get(t.owner_id)?.display_name || "Former traveler",
+          member_count: members.filter((m) => m.trip_id === t.id).length,
+          is_member: members.some(
+            (m) => m.trip_id === t.id && m.user_id === id,
+          ),
+          participated: participants.some((p) => p.trip_id === t.id),
+          review_count: ratings.length,
+          average_rating: ratings.length
+            ? Math.round(
+                (ratings.reduce((sum, r) => sum + r.rating, 0) /
+                  ratings.length) *
+                  10,
+              ) / 10
+            : null,
+        });
+      });
     const result = {
       user: req.user ? publicUser(req.user) : null,
       today: travelDate(),
-      trips: r.rows.map(serialize),
+      trips: tripList,
       saved: [],
       requests: [],
       incoming: [],
       notifications: [],
-      hidden: [],
+      hidden: hidden.map((h) => h.trip_id),
       blocks: [],
     };
     if (id) {
-      const [s, j, i, n, h, b] = await Promise.all([
-        pool.query("SELECT trip_id FROM saved_trips WHERE user_id=$1", [id]),
-        pool.query(
-          "SELECT trip_id,status,note FROM join_requests WHERE user_id=$1 AND status IN ('pending','accepted')",
-          [id],
-        ),
-        pool.query(
-          "SELECT j.trip_id,j.user_id,j.note,j.status,u.display_name,u.bio,t.title FROM join_requests j JOIN trips t ON t.id=j.trip_id JOIN users u ON u.id=j.user_id WHERE t.organizer_id=$1 AND t.ends_on>=" +
-            TODAY_SQL +
-            " AND j.status='pending' ORDER BY j.updated_at",
-          [id],
-        ),
-        pool.query(
-          "SELECT id,trip_id,body,read_at,created_at FROM notifications WHERE user_id=$1 ORDER BY id DESC LIMIT 30",
-          [id],
-        ),
-        pool.query("SELECT trip_id FROM hidden_trips WHERE user_id=$1", [id]),
-        pool.query(
-          "SELECT b.id,b.blocked_id,b.reason,b.category,b.context_trip_id,b.created_at,u.display_name AS name FROM user_blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 AND b.ended_at IS NULL ORDER BY b.created_at DESC",
-          [id],
-        ),
+      const organized = records.filter(
+        (t) => t.organizer_id === id && t.ends_on >= travelDate(),
+      );
+      const [saved, requests, incoming, notifications, blocks] =
+        await Promise.all([
+          pool.all("saved_trips", { user_id: id }),
+          pool.all("join_requests", {
+            user_id: id,
+            status: { $in: ["pending", "accepted"] },
+          }),
+          pool.all(
+            "join_requests",
+            { trip_id: { $in: organized.map((t) => t.id) }, status: "pending" },
+            { sort: { updated_at: 1 } },
+          ),
+          pool.all(
+            "notifications",
+            { user_id: id },
+            { sort: { created_at: -1, id: -1 }, limit: 30 },
+          ),
+          pool.all(
+            "user_blocks",
+            { blocker_id: id, ended_at: null },
+            { sort: { created_at: -1 } },
+          ),
+        ]);
+      const people = await userMap(pool, [
+        ...incoming.map((r) => r.user_id),
+        ...blocks.map((b) => b.blocked_id),
       ]);
-      result.saved = s.rows.map((r) => r.trip_id);
-      result.requests = j.rows;
-      result.incoming = i.rows;
-      result.notifications = n.rows;
-      result.hidden = h.rows.map((r) => r.trip_id);
-      result.blocks = b.rows;
+      result.saved = saved.map((r) => r.trip_id);
+      result.requests = requests.map(({ trip_id, status, note }) => ({
+        trip_id,
+        status,
+        note,
+      }));
+      result.incoming = incoming.map((r) => ({
+        trip_id: r.trip_id,
+        user_id: r.user_id,
+        note: r.note,
+        status: r.status,
+        display_name: people.get(r.user_id)?.display_name || "Former traveler",
+        bio: people.get(r.user_id)?.bio || "",
+        title: organized.find((t) => t.id === r.trip_id)?.title,
+      }));
+      result.notifications = notifications.map(
+        ({ id, trip_id, body, read_at, created_at }) => ({
+          id,
+          trip_id,
+          body,
+          read_at,
+          created_at,
+        }),
+      );
+      result.blocks = blocks.map((b) => ({
+        id: b.id,
+        blocked_id: b.blocked_id,
+        reason: b.reason,
+        category: b.category,
+        context_trip_id: b.context_trip_id,
+        created_at: b.created_at,
+        name: people.get(b.blocked_id)?.display_name || "Former traveler",
+      }));
     }
     res.json(result);
   });
@@ -203,33 +289,28 @@ export function registerTripRoutes(
             ? "udaipur"
             : "manali";
     const id = await transaction(pool, async (db) => {
-      const r = await db.query(
-        "INSERT INTO trips(owner_id,organizer_id,title,destination,from_city,starts_on,ends_on,budget_min,budget_max,existing_travelers,capacity,category,mode,women_only,description,plan,rules,image) VALUES($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id",
-        [
-          req.user.id,
-          d.title,
-          d.destination,
-          d.from,
-          d.start,
-          d.end,
-          d.min,
-          d.max,
-          d.going,
-          d.going + d.seats,
-          d.category,
-          d.mode,
-          d.women,
-          d.description,
-          d.plan,
-          d.rules,
-          image,
-        ],
-      );
-      await db.query(
-        "INSERT INTO trip_members(trip_id,user_id) VALUES($1,$2)",
-        [r.rows[0].id, req.user.id],
-      );
-      return r.rows[0].id;
+      const t = await db.insert("trips", {
+        owner_id: req.user.id,
+        organizer_id: req.user.id,
+        title: d.title,
+        destination: d.destination,
+        from_city: d.from,
+        starts_on: d.start,
+        ends_on: d.end,
+        budget_min: d.min,
+        budget_max: d.max,
+        existing_travelers: d.going,
+        capacity: d.going + d.seats,
+        category: d.category,
+        mode: d.mode,
+        women_only: d.women,
+        description: d.description,
+        plan: d.plan,
+        rules: d.rules,
+        image,
+      });
+      await addMember(db, t.id, req.user.id);
+      return t.id;
     });
     res.status(201).json({ id });
   });
@@ -252,18 +333,16 @@ export function registerTripRoutes(
   app.put("/api/trips/:id/save", requireUser, async (req, res) => {
     const id = uuid.parse(req.params.id),
       { saved } = z.object({ saved: z.boolean() }).parse(req.body);
-    if (!(await pool.query("SELECT id FROM trips WHERE id=$1", [id])).rowCount)
-      fail(404, "Trip not found.");
+    if (!(await pool.one("trips", { id }))) fail(404, "Trip not found.");
+    const key = { user_id: req.user.id, trip_id: id };
     if (saved)
-      await pool.query(
-        "INSERT INTO saved_trips(user_id,trip_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
-        [req.user.id, id],
+      await pool.update(
+        "saved_trips",
+        key,
+        { $setOnInsert: key },
+        { upsert: true },
       );
-    else
-      await pool.query(
-        "DELETE FROM saved_trips WHERE user_id=$1 AND trip_id=$2",
-        [req.user.id, id],
-      );
+    else await pool.remove("saved_trips", key);
     res.json({ saved });
   });
   app.post("/api/trips/:id/requests", requireUser, async (req, res) => {
@@ -276,9 +355,7 @@ export function registerTripRoutes(
     if (!req.user.adult_confirmed)
       fail(403, "Complete your 18+ profile before joining.");
     await transaction(pool, async (db) => {
-      const {
-        rows: [t],
-      } = await db.query("SELECT * FROM trips WHERE id=$1 FOR UPDATE", [id]);
+      const t = await lockTrip(db, id);
       if (!t || t.status !== "open") fail(404, "Trip is not available.");
       if (t.ends_on < travelDate())
         fail(400, "This trip has ended; joining is closed.");
@@ -289,28 +366,25 @@ export function registerTripRoutes(
         );
       if (t.women_only && req.user.gender !== "woman")
         fail(403, "Only eligible travelers can request this women-only trip.");
-      const members = await db.query(
-        "SELECT user_id FROM trip_members WHERE trip_id=$1",
-        [id],
-      );
-      if (members.rows.some((m) => m.user_id === req.user.id))
+      const crew = await crewLocks(db, id, req.user.id);
+      if (crew.some((m) => m.user_id === req.user.id))
         fail(409, "You are already a member.");
       if (await blockedWithCrew(db, id, req.user.id))
         fail(
           403,
           "Joining is unavailable because of traveler-group restrictions.",
         );
-      if (t.capacity - (t.existing_travelers - 1) - members.rowCount <= 0)
+      if (t.capacity - (t.existing_travelers - 1) - crew.length <= 0)
         fail(409, "This trip has no open spots.");
-      const existing = await db.query(
-        "SELECT status FROM join_requests WHERE trip_id=$1 AND user_id=$2",
-        [id, req.user.id],
-      );
-      if (existing.rows[0]?.status === "pending")
+      const key = { trip_id: id, user_id: req.user.id },
+        existing = await db.one("join_requests", key);
+      if (existing?.status === "pending")
         fail(409, "Your request is already pending.");
-      await db.query(
-        "INSERT INTO join_requests(trip_id,user_id,note,status) VALUES($1,$2,$3,'pending') ON CONFLICT(trip_id,user_id) DO UPDATE SET note=$3,status='pending',updated_at=now()",
-        [id, req.user.id, note],
+      await db.update(
+        "join_requests",
+        key,
+        { $set: { note, status: "pending", updated_at: new Date() } },
+        { upsert: true },
       );
       await notify(
         db,
@@ -324,29 +398,25 @@ export function registerTripRoutes(
   app.delete("/api/trips/:id/requests", requireUser, async (req, res) => {
     const id = uuid.parse(req.params.id);
     const organizerId = await transaction(pool, async (db) => {
-      const {
-        rows: [t],
-      } = await db.query("SELECT * FROM trips WHERE id=$1 FOR UPDATE", [id]);
+      const t = await lockTrip(db, id);
       if (!t) fail(404, "Trip not found.");
-      await db.query(
-        "UPDATE join_requests SET status='canceled',updated_at=now() WHERE trip_id=$1 AND user_id=$2",
-        [id, req.user.id],
+      await db.update(
+        "join_requests",
+        { trip_id: id, user_id: req.user.id },
+        { $set: { status: "canceled", updated_at: new Date() } },
       );
-      await db.query(
-        "DELETE FROM trip_members WHERE trip_id=$1 AND user_id=$2",
-        [id, req.user.id],
-      );
+      await removeMember(db, id, req.user.id);
       let organizer = t.organizer_id;
       if (organizer === req.user.id) {
-        const remaining = await db.query(
-          "SELECT user_id FROM trip_members WHERE trip_id=$1 ORDER BY joined_at,user_id LIMIT 1",
-          [id],
-        );
-        organizer = remaining.rows[0]?.user_id || null;
-        await db.query("UPDATE trips SET organizer_id=$2 WHERE id=$1", [
-          id,
-          organizer,
-        ]);
+        organizer =
+          (
+            await db.all(
+              "trip_members",
+              { trip_id: id },
+              { sort: { joined_at: 1, user_id: 1 }, limit: 1 },
+            )
+          )[0]?.user_id || null;
+        await db.update("trips", { id }, { $set: { organizer_id: organizer } });
         if (organizer)
           await notify(
             db,
@@ -355,9 +425,10 @@ export function registerTripRoutes(
             "The previous organizer left. You are now the organizer of this retained trip.",
           );
         else
-          await db.query(
-            "UPDATE join_requests SET status='rejected',updated_at=now() WHERE trip_id=$1 AND status='pending'",
-            [id],
+          await db.updateMany(
+            "join_requests",
+            { trip_id: id, status: "pending" },
+            { $set: { status: "rejected", updated_at: new Date() } },
           );
       }
       return organizer;
@@ -372,27 +443,25 @@ export function registerTripRoutes(
         .object({ status: z.enum(["accepted", "rejected"]) })
         .parse(req.body);
     await transaction(pool, async (db) => {
-      const {
-        rows: [t],
-      } = await db.query("SELECT * FROM trips WHERE id=$1 FOR UPDATE", [id]);
+      const t = await lockTrip(db, id);
       if (!t) fail(404, "Trip not found.");
       if (t.organizer_id !== req.user.id)
         fail(403, "Only the current organizer can review requests.");
       if (t.status !== "open" || t.ends_on < travelDate())
         fail(409, "This trip is no longer accepting travelers.");
-      const {
-        rows: [request],
-      } = await db.query(
-        "SELECT j.*,u.gender,u.adult_confirmed,u.first_name,u.last_name FROM join_requests j JOIN users u ON u.id=j.user_id WHERE j.trip_id=$1 AND j.user_id=$2",
-        [id, userId],
-      );
+      const request = await db.one("join_requests", {
+        trip_id: id,
+        user_id: userId,
+      });
       if (request?.status !== "pending")
         fail(409, "The request is no longer pending.");
+      const crew = await crewLocks(db, id, userId),
+        user = await db.one("users", { id: userId });
       if (status === "accepted") {
         if (
-          !request.adult_confirmed ||
-          !profileComplete(request) ||
-          (t.women_only && request.gender !== "woman")
+          !user?.adult_confirmed ||
+          !profileComplete(user) ||
+          (t.women_only && user.gender !== "woman")
         )
           fail(403, "This traveler is no longer eligible.");
         if (await blockedWithCrew(db, id, userId))
@@ -400,22 +469,14 @@ export function registerTripRoutes(
             403,
             "Approval is unavailable because of traveler-group restrictions.",
           );
-        const {
-          rows: [m],
-        } = await db.query(
-          "SELECT count(*)::int AS n FROM trip_members WHERE trip_id=$1",
-          [id],
-        );
-        if (t.capacity - (t.existing_travelers - 1) - m.n <= 0)
+        if (t.capacity - (t.existing_travelers - 1) - crew.length <= 0)
           fail(409, "No spots remain.");
-        await db.query(
-          "INSERT INTO trip_members(trip_id,user_id) VALUES($1,$2)",
-          [id, userId],
-        );
+        await addMember(db, id, userId);
       }
-      await db.query(
-        "UPDATE join_requests SET status=$3,updated_at=now() WHERE trip_id=$1 AND user_id=$2",
-        [id, userId, status],
+      await db.update(
+        "join_requests",
+        { trip_id: id, user_id: userId },
+        { $set: { status, updated_at: new Date() } },
       );
       await notify(
         db,
@@ -431,30 +492,81 @@ export function registerTripRoutes(
   app.get("/api/trips/:id/members", requireUser, async (req, res) => {
     const id = uuid.parse(req.params.id);
     await requireParticipant(pool, id, req.user.id);
-    const r = await pool.query(
-      "SELECT u.id,u.display_name AS name,u.bio,(m.user_id IS NOT NULL) AS active FROM trip_participants p JOIN users u ON u.id=p.user_id LEFT JOIN trip_members m ON m.trip_id=p.trip_id AND m.user_id=p.user_id WHERE p.trip_id=$1 ORDER BY p.first_joined_at",
-      [id],
-    );
-    const blocks = await pool.query(
-      "SELECT b.id,b.blocker_id,b.blocked_id,b.category,b.reason,b.created_at,a.display_name AS blocker,v.display_name AS blocked FROM user_blocks b JOIN users a ON a.id=b.blocker_id JOIN users v ON v.id=b.blocked_id WHERE b.context_trip_id=$1 AND b.ended_at IS NULL ORDER BY b.created_at DESC",
-      [id],
-    );
-    for (const member of r.rows)
-      member.canReview = await reviewEligible(pool, id, member.id);
+    const [participants, active, t, blocks] = await Promise.all([
+      pool.all(
+        "trip_participants",
+        { trip_id: id },
+        { sort: { first_joined_at: 1 } },
+      ),
+      pool.all("trip_members", { trip_id: id }),
+      pool.one("trips", { id }),
+      pool.all(
+        "user_blocks",
+        { context_trip_id: id, ended_at: null },
+        { sort: { created_at: -1 } },
+      ),
+    ]);
+    const people = await userMap(pool, [
+      ...participants.map((p) => p.user_id),
+      ...blocks.flatMap((b) => [b.blocker_id, b.blocked_id]),
+    ]);
+    const members = [];
+    for (const p of participants) {
+      const user = people.get(p.user_id);
+      if (user)
+        members.push({
+          id: user.id,
+          name: user.display_name,
+          bio: user.bio,
+          active: active.some((m) => m.user_id === user.id),
+          canReview: await reviewEligible(pool, t, user.id),
+        });
+    }
     res.json({
-      members: r.rows,
-      blocks: blocks.rows,
-      canReview: await reviewEligible(pool, id, req.user.id),
+      members,
+      blocks: blocks.map((b) => ({
+        id: b.id,
+        blocker_id: b.blocker_id,
+        blocked_id: b.blocked_id,
+        category: b.category,
+        reason: b.reason,
+        created_at: b.created_at,
+        blocker: people.get(b.blocker_id)?.display_name,
+        blocked: people.get(b.blocked_id)?.display_name,
+      })),
+      canReview: await reviewEligible(pool, t, req.user.id),
     });
   });
   app.get("/api/trips/:id/messages", requireUser, async (req, res) => {
     const id = uuid.parse(req.params.id);
     await requireParticipant(pool, id, req.user.id, { current: true });
-    const r = await pool.query(
-      `SELECT m.id,m.user_id,u.display_name AS name,m.body,m.created_at FROM messages m JOIN users u ON u.id=m.user_id WHERE m.trip_id=$1 AND NOT EXISTS(SELECT 1 FROM user_blocks b WHERE b.ended_at IS NULL AND ((b.blocker_id=$2 AND b.blocked_id=m.user_id) OR (b.blocked_id=$2 AND b.blocker_id=m.user_id))) ORDER BY m.id DESC LIMIT 100`,
-      [id, req.user.id],
+    const blocks = await pool.all("user_blocks", {
+      ended_at: null,
+      $or: [{ blocker_id: req.user.id }, { blocked_id: req.user.id }],
+    });
+    const excluded = blocks.map((b) =>
+      b.blocker_id === req.user.id ? b.blocked_id : b.blocker_id,
     );
-    res.json({ messages: r.rows.reverse() });
+    const records = await pool.all(
+      "messages",
+      { trip_id: id, user_id: { $nin: excluded } },
+      { sort: { created_at: -1, id: -1 }, limit: 100 },
+    );
+    const people = await userMap(
+      pool,
+      records.map((m) => m.user_id),
+    );
+    res.json({
+      messages: records
+        .reverse()
+        .map((m) => ({
+          id: m.id,
+          user_id: m.user_id,
+          name: people.get(m.user_id)?.display_name || "Former traveler",
+          body: m.body,
+          created_at: m.created_at,
+        })),
+    });
   });
   app.post("/api/trips/:id/messages", requireUser, async (req, res) => {
     requireNames(req);
@@ -464,16 +576,11 @@ export function registerTripRoutes(
         .object({ body: z.string().trim().min(1).max(2000) })
         .parse(req.body);
     await transaction(pool, async (db) => {
-      const {
-        rows: [t],
-      } = await db.query("SELECT * FROM trips WHERE id=$1 FOR UPDATE", [id]);
+      const t = await lockTrip(db, id);
       await requireParticipant(db, id, req.user.id, { current: true });
       if (!t || t.status !== "open" || t.ends_on < travelDate())
         fail(409, "Past or inactive trip chats are read-only.");
-      await db.query(
-        "INSERT INTO messages(trip_id,user_id,body) VALUES($1,$2,$3)",
-        [id, req.user.id, body],
-      );
+      await db.insert("messages", { trip_id: id, user_id: req.user.id, body });
     });
     res.status(201).json({ ok: true });
   });
@@ -487,27 +594,31 @@ export function registerTripRoutes(
       .parse(req.body);
     await throttle(req, `report:${req.user.id}`, 30);
     await transaction(pool, async (db) => {
-      const {
-        rows: [t],
-      } = await db.query("SELECT owner_id FROM trips WHERE id=$1", [d.tripId]);
+      const t = await db.one("trips", { id: d.tripId });
       if (!t) fail(404, "Trip not found.");
       if (t.owner_id === req.user.id)
         fail(400, "You cannot report your own trip.");
-      await db.query(
-        "INSERT INTO reports(reporter_id,trip_id,reason,note) VALUES($1,$2,$3,$4)",
-        [req.user.id, d.tripId, d.reason, d.note],
-      );
-      await db.query(
-        "INSERT INTO hidden_trips(user_id,trip_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
-        [req.user.id, d.tripId],
+      await db.insert("reports", {
+        reporter_id: req.user.id,
+        trip_id: d.tripId,
+        reason: d.reason,
+        note: d.note,
+      });
+      const key = { user_id: req.user.id, trip_id: d.tripId };
+      await db.update(
+        "hidden_trips",
+        key,
+        { $setOnInsert: key },
+        { upsert: true },
       );
     });
     res.status(201).json({ ok: true });
   });
   app.post("/api/notifications/read", requireUser, async (req, res) => {
-    await pool.query(
-      "UPDATE notifications SET read_at=now() WHERE user_id=$1 AND read_at IS NULL",
-      [req.user.id],
+    await pool.updateMany(
+      "notifications",
+      { user_id: req.user.id, read_at: null },
+      { $set: { read_at: new Date() } },
     );
     res.json({ ok: true });
   });
@@ -520,39 +631,54 @@ export function registerTripRoutes(
           rating: z.number().int().min(1).max(5),
           body: z.string().trim().min(10).max(1000),
         })
-        .parse(req.body);
-    const {
-      rows: [t],
-    } = await pool.query("SELECT * FROM trips WHERE id=$1", [id]);
+        .parse(req.body),
+      t = await pool.one("trips", { id });
     if (!t || t.status !== "open" || t.ends_on >= travelDate())
       fail(400, "Reviews open after a trip has ended.");
     if (d.travelerId === req.user.id) fail(400, "You cannot review yourself.");
     if (
-      !(await reviewEligible(pool, id, req.user.id)) ||
-      !(await reviewEligible(pool, id, d.travelerId))
+      !(await reviewEligible(pool, t, req.user.id)) ||
+      !(await reviewEligible(pool, t, d.travelerId))
     )
       fail(
         403,
         "Reviews require registered participation overlapping the trip dates.",
       );
     try {
-      await pool.query(
-        "INSERT INTO reviews(trip_id,author_id,traveler_id,rating,body) VALUES($1,$2,$3,$4,$5)",
-        [id, req.user.id, d.travelerId, d.rating, d.body],
-      );
+      await pool.insert("reviews", {
+        trip_id: id,
+        author_id: req.user.id,
+        traveler_id: d.travelerId,
+        rating: d.rating,
+        body: d.body,
+      });
     } catch (e) {
-      if (e.code === "23505")
+      if (e.code === 11000)
         fail(409, "You already reviewed this traveler for this trip.");
       throw e;
     }
     res.status(201).json({ ok: true });
   });
   app.get("/api/trips/:id/reviews", async (req, res) => {
-    const id = uuid.parse(req.params.id);
-    const r = await pool.query(
-      "SELECT r.id,r.rating,r.body,r.created_at,a.display_name AS author,v.display_name AS traveler FROM reviews r JOIN users a ON a.id=r.author_id JOIN users v ON v.id=r.traveler_id WHERE r.trip_id=$1 ORDER BY r.created_at DESC LIMIT 50",
-      [id],
-    );
-    res.json({ reviews: r.rows });
+    const id = uuid.parse(req.params.id),
+      records = await pool.all(
+        "reviews",
+        { trip_id: id },
+        { sort: { created_at: -1, id: -1 }, limit: 50 },
+      ),
+      people = await userMap(
+        pool,
+        records.flatMap((r) => [r.author_id, r.traveler_id]),
+      );
+    res.json({
+      reviews: records.map((r) => ({
+        id: r.id,
+        rating: r.rating,
+        body: r.body,
+        created_at: r.created_at,
+        author: people.get(r.author_id)?.display_name || "Former traveler",
+        traveler: people.get(r.traveler_id)?.display_name || "Former traveler",
+      })),
+    });
   });
 }

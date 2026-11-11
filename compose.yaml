@@ -1,29 +1,41 @@
 services:
-  db:
-    image: postgres:17-bookworm
-    environment:
-      POSTGRES_DB: tripling
-      POSTGRES_USER: tripling
-      POSTGRES_PASSWORD: local-development-only
+  mongo:
+    image: mongo:8.0
+    command: [mongod, --replSet, tripling-rs, --bind_ip_all]
     volumes:
-      - tripling_db:/var/lib/postgresql/data
+      - tripling_mongo:/data/db
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:27017:27017"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tripling -d tripling"]
-      interval: 5s
+      test: [CMD-SHELL, "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"]
+      interval: 3s
       timeout: 5s
-      retries: 20
+      retries: 30
+  mongo-init:
+    image: mongo:8.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: [bash, -c]
+    command:
+      - |
+        mongosh --host mongo --quiet --eval 'try {rs.status()} catch(e) {if(e.code===94) rs.initiate({_id:"tripling-rs",members:[{_id:0,host:"mongo:27017"}]}); else throw e;}'
+        for attempt in {1..30}; do
+          if mongosh --host mongo --quiet --eval 'if(!db.hello().isWritablePrimary)quit(1)'; then exit 0; fi
+          sleep 1
+        done
+        exit 1
   app:
     build: .
     environment:
       NODE_ENV: development
       PORT: "3000"
-      DATABASE_URL: postgres://tripling:local-development-only@db:5432/tripling
+      MONGODB_URI: mongodb://mongo:27017/?replicaSet=tripling-rs
+      MONGODB_DATABASE: tripling
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
-      db:
-        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
 volumes:
-  tripling_db:
+  tripling_mongo:

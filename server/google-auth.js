@@ -107,19 +107,17 @@ export function registerGoogleAuth(
       nonce,
       verifier,
     });
-    await pool.query("DELETE FROM oauth_flows WHERE expires_at<now()");
-    await pool.query("DELETE FROM oauth_pending WHERE expires_at<now()");
-    await pool.query(
-      "INSERT INTO oauth_flows(state_hash,browser_hash,verifier,nonce,expires_at,link_user_id,link_session_hash) VALUES($1,$2,$3,$4,now()+interval '10 minutes',$5,$6)",
-      [
-        digest(state),
-        digest(browser),
-        verifier,
-        nonce,
-        linking ? req.user.id : null,
-        linking ? digest(sessionToken(req)) : null,
-      ],
-    );
+    await pool.removeMany("oauth_flows", { expires_at: { $lt: new Date() } });
+    await pool.removeMany("oauth_pending", { expires_at: { $lt: new Date() } });
+    await pool.insert("oauth_flows", {
+      state_hash: digest(state),
+      browser_hash: digest(browser),
+      verifier,
+      nonce,
+      expires_at: new Date(Date.now() + 600000),
+      link_user_id: linking ? req.user.id : null,
+      link_session_hash: linking ? digest(sessionToken(req)) : null,
+    });
     res.cookie(flowCookie, browser, options).redirect(url);
   });
   app.get("/api/auth/google/callback", async (req, res) => {
@@ -131,11 +129,11 @@ export function registerGoogleAuth(
       clear(res, flowCookie);
       if (!/^[a-f0-9]{64}$/.test(state) || !/^[a-f0-9]{64}$/.test(browser))
         return reject("expired");
-      const { rows } = await pool.query(
-        "DELETE FROM oauth_flows WHERE state_hash=$1 AND browser_hash=$2 AND expires_at>now() RETURNING *",
-        [digest(state), digest(browser)],
-      );
-      const flow = rows[0];
+      const flow = await pool.take("oauth_flows", {
+        state_hash: digest(state),
+        browser_hash: digest(browser),
+        expires_at: { $gt: new Date() },
+      });
       if (!flow) return reject("expired");
       if (req.query.error) return reject("canceled");
       if (
@@ -157,44 +155,50 @@ export function registerGoogleAuth(
       )
         return reject("verification");
       const email = claims.email.toLowerCase();
-      const identity = await pool.query(
-        "SELECT u.* FROM oauth_identities i JOIN users u ON u.id=i.user_id WHERE i.provider='google' AND i.subject=$1",
-        [claims.sub],
-      );
+      const identity = await pool.one("oauth_identities", {
+        provider: "google",
+        subject: claims.sub,
+      });
+      const identityUser = identity
+        ? await pool.one("users", { id: identity.user_id })
+        : null;
       if (flow.link_user_id) {
         if (
           email !== req.user.email ||
-          (identity.rows[0] && identity.rows[0].id !== req.user.id)
+          (identityUser && identityUser.id !== req.user.id)
         )
           return reject("link");
-        await pool.query(
-          "INSERT INTO oauth_identities(provider,subject,user_id) VALUES('google',$1,$2) ON CONFLICT(provider,subject) DO NOTHING",
-          [claims.sub, req.user.id],
+        await pool.update(
+          "oauth_identities",
+          { provider: "google", subject: claims.sub },
+          {
+            $setOnInsert: {
+              provider: "google",
+              subject: claims.sub,
+              user_id: req.user.id,
+              created_at: new Date(),
+            },
+          },
+          { upsert: true },
         );
         return res.redirect("/#profile");
       }
-      if (identity.rows[0]) {
+      if (identityUser) {
         await transaction(pool, (db) =>
-          issueSession(db, req, res, identity.rows[0].id, production),
+          issueSession(db, req, res, identityUser.id, production),
         );
         return res.redirect("/#discover");
       }
-      if (
-        (await pool.query("SELECT 1 FROM users WHERE email=$1", [email]))
-          .rowCount
-      )
-        return reject("existing");
+      if (await pool.one("users", { email })) return reject("existing");
       const token = randomBytes(32).toString("hex");
-      await pool.query(
-        "INSERT INTO oauth_pending(token_hash,subject,email,first_name,last_name,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes')",
-        [
-          digest(token),
-          claims.sub,
-          email,
-          String(claims.given_name || "").slice(0, 50),
-          String(claims.family_name || "").slice(0, 50),
-        ],
-      );
+      await pool.insert("oauth_pending", {
+        token_hash: digest(token),
+        subject: claims.sub,
+        email,
+        first_name: String(claims.given_name || "").slice(0, 50),
+        last_name: String(claims.family_name || "").slice(0, 50),
+        expires_at: new Date(Date.now() + 600000),
+      });
       res.cookie(pendingCookie, token, options).redirect("/#sso-complete");
     } catch (e) {
       console.error("Google sign-in failed:", e.code || e.name);
@@ -205,13 +209,16 @@ export function registerGoogleAuth(
     const token = cookie(req, pendingCookie);
     if (!/^[a-f0-9]{64}$/.test(token))
       throw httpError(401, "Restart Google sign-in to continue.");
-    const { rows } = await db.query(
-      `${consume ? "DELETE FROM" : "SELECT * FROM"} oauth_pending WHERE token_hash=$1 AND expires_at>now()${consume ? " RETURNING *" : ""}`,
-      [digest(token)],
-    );
-    if (!rows[0])
+    const filter = {
+      token_hash: digest(token),
+      expires_at: { $gt: new Date() },
+    };
+    const result = consume
+      ? await db.take("oauth_pending", filter)
+      : await db.one("oauth_pending", filter);
+    if (!result)
       throw httpError(401, "Google sign-in expired. Please start again.");
-    return rows[0];
+    return result;
   }
   app.get("/api/auth/google/pending", async (req, res) => {
     const p = await pending(req);
@@ -247,26 +254,31 @@ export function registerGoogleAuth(
             409,
             "Policies changed. Refresh and review them again.",
           );
-        const { rows } = await db.query(
-          "INSERT INTO users(email,first_name,last_name,display_name,adult_confirmed) VALUES($1,$2,$3,$4,true) RETURNING *",
-          [p.email, d.firstName, d.lastName, d.firstName + " " + d.lastName],
-        );
-        await db.query(
-          "INSERT INTO oauth_identities(provider,subject,user_id) VALUES('google',$1,$2)",
-          [p.subject, rows[0].id],
-        );
+        const user = await db.insert("users", {
+          email: p.email,
+          first_name: d.firstName,
+          last_name: d.lastName,
+          display_name: d.firstName + " " + d.lastName,
+          adult_confirmed: true,
+        });
+        await db.insert("oauth_identities", {
+          provider: "google",
+          subject: p.subject,
+          user_id: user.id,
+        });
         for (const slug of ["terms", "privacy"])
-          await db.query(
-            "INSERT INTO legal_acceptances(user_id,slug,version) VALUES($1,$2,$3)",
-            [rows[0].id, slug, docs[slug].version],
-          );
-        await issueSession(db, req, res, rows[0].id, production);
-        return { ...rows[0], google_linked: true };
+          await db.insert("legal_acceptances", {
+            user_id: user.id,
+            slug,
+            version: docs[slug].version,
+          });
+        await issueSession(db, req, res, user.id, production);
+        return { ...user, google_linked: true };
       });
       clear(res, pendingCookie);
       res.status(201).json({ user: publicUser(user) });
     } catch (e) {
-      if (e.code === "23505")
+      if (e.code === 11000)
         throw httpError(
           409,
           "An account already exists. Log in with your existing method and connect Google from your profile.",

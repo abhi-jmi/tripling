@@ -5,3 +5,7 @@ node_modules/
 coverage/
 *.log
 work/
+
+# Sensitive data-transfer artifacts stay outside source control.
+transfer/
+*snapshot*.json

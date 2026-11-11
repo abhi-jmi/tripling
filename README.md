@@ -1,138 +1,56 @@
 # Tripling
 
-Tripling is a trip-first travel companion website with a Node.js API and PostgreSQL database. The frontend and API run from the same server so account sessions work without cross-origin configuration.
+Tripling is a travel companion website using **Node.js 22+, Express, and MongoDB**. All application logic is JavaScript. The browser interface uses HTML, CSS and vanilla JavaScript served by Node.js; HTML and CSS remain necessary browser assets.
 
-## Implemented
-
-- Versioned, PostgreSQL-backed Terms and Privacy pages at `/terms` and `/privacy`, with transactional signup acknowledgments. Public operator details are configured as Tripling, abhishek@tripling.in, and Chandigarh/India; invalid production policy configuration is rejected.
-- Email/password signup with password confirmation and adult confirmation; email/password login and logout. No email-verification step.
-- Salted scrypt password hashes, opaque server-side sessions, HttpOnly cookies, same-origin write protection, persistent login throttling, and bounded password-hashing concurrency.
-- Public trip discovery with destination, overlapping date, origin, budget, travel style, and transport filters. No sample accounts or seeded trip listings are inserted into the database.
-- Database-backed profiles, trips, saves, requests, memberships, messages, notifications, reports, hidden trips, and post-trip traveler reviews.
-- Organizer approval/decline, atomic capacity checks, server-side women-only eligibility checks using self-declared profile eligibility, cancellation, and leaving a group.
-- Group chat available only to organizers and approved members, refreshed every five seconds. Leaving revokes access. Canceled groups are read-only.
-- Persistent in-app notifications; post-trip reviews only between registered members of the same completed trip.
-- Responsive login, discovery, personal plans, and modal flows. Existing illustrative landscape photos are bundled locally.
+The application uses the official MongoDB driver, not a SQL compatibility layer. PostgreSQL is no longer a runtime dependency. The `pg` development dependency is used only by the one-time read-only export tool and migration tests. Existing PostgreSQL migrations are archived under `scripts/legacy/postgres-migrations/` for data-transfer compatibility.
 
 ## Run locally
 
-Requires Node.js 22.21+ and Docker Compose.
-
-```sh
-npm ci
-docker compose up -d db
-cp .env.example .env
-npm start
+```bash
+docker compose up --build
 ```
 
-Open `http://localhost:3000`. Create your own account, complete your traveler profile, and create the first trip. Open a separate browser profile or incognito window to try a second account and the approval/chat flows.
+Open `http://localhost:3000`. Compose starts MongoDB 8 as a single-node replica set, initializes it, and starts the Node.js application. This local database has no authentication and is exposed only on loopback; use authenticated Atlas with verified TLS for production.
 
-Alternatively, `docker compose up --build` runs both the app and database. The Compose database password is for local development only; PostgreSQL is bound to loopback. Data survives container restarts in the named `tripling_db` volume. `docker compose down` preserves it; adding `-v` permanently removes local data.
+For a separate Node.js process, run `npm ci`, copy `.env.example` to untracked `.env`, configure a MongoDB replica set or Atlas URI, then run `npm start`. The example `directConnection=true` lets a host process access the local Compose database without resolving its internal `mongo` hostname. Inside Compose the app uses `mongo` directly.
 
-Do not serve `dist/` alone: its interactions now require the Node API. The existing `.openai/hosting.json` identifies the previous static Sites preview; it is not an AWS deployment manifest and that hosted preview has not been updated to this backend.
+`npm run db:setup` initializes collections, unique indexes, expiry indexes and the location catalog. Startup also runs this idempotent setup. It does not drop collections or manufacture traveler records.
+
+## Features
+
+- Email/password registration with required first/last names, confirmation, 18+ acknowledgement, and versioned legal consent. Passwords use salted scrypt; sessions use HttpOnly cookies and hashed tokens in MongoDB.
+- Optional [Google sign-in](docs/google-sign-in.md) with PKCE, nonce, browser-bound state and deliberate account linking.
+- Database-backed trip posting, alphabetical location suggestions, saved trips, organizer approvals, private group messages and notifications.
+- Transactions and unique indexes protect membership, capacity, consent and identity changes across multiple ECS tasks. MongoDB **replica sets/Atlas are required**; standalone MongoDB is rejected at startup.
+- Published trips remain available. Everyone may leave; organizer duties pass to the earliest remaining member. With no active organizer, joining closes. Participation history and past-trip reviews remain available.
+- Traveler blocking with required reasons. A selected shared trip limits reason visibility to its registered participants, including those who left; private reasons remain with their author. Statements can be reported. Blocks restrict new memberships and hide messages between the affected travelers.
+- Public database-backed `/terms` and `/privacy`, safe profile/name search, origin checks and database-backed login throttling.
+
+Travel dates are interpreted in Asia/Kolkata. Public APIs expose selected fields, never password hashes or private account emails. Reporting is stored for operator follow-up; it is not emergency monitoring.
 
 ## Checks
 
-Integration tests reset their database, so the test runner requires a dedicated database whose name ends in `_test`.
+Use an isolated MongoDB database whose name ends in `_test`:
 
-```sh
-docker compose exec db createdb -U tripling tripling_test
-TEST_DATABASE_URL=postgres://tripling:local-development-only@localhost:5432/tripling_test npm test
+```bash
+TEST_MONGODB_URI='mongodb://127.0.0.1:27017/?replicaSet=tripling-rs&directConnection=true' TEST_MONGODB_DATABASE=tripling_test npm test
 npm run check
 ```
 
-Tests cover password validation/storage, login/session rotation, origin checks, authorization, durable records, concurrent last-spot approvals, women-only eligibility at request and approval time, chat membership, leaving, cancellations, reviews, notifications, reports, logout, restart persistence, throttling, and migration safety.
+The PostgreSQL-to-MongoDB transfer integration test additionally takes `PG_SOURCE_TEST_URI` pointing at a **disposable PostgreSQL database ending in `_test`**. That test resets its schema. CI provisions both a MongoDB replica set for all runtime tests and a separate PostgreSQL source for the transfer test. PostgreSQL is not used to run the website.
 
-For end-to-end browser checks, start the app against that dedicated test database in another terminal, then run:
+For browser tests, start a local server against another empty `_test` MongoDB database, then run:
 
-```sh
-# Requires an installed Chromium/Chrome executable; no cloud services are used.
-TRIPLING_TEST_ORIGIN=http://127.0.0.1:3000 \
-PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:browser
+```bash
+TRIPLING_TEST_ORIGIN=http://127.0.0.1:3000 TEST_MONGODB_URI='mongodb://127.0.0.1:27017/?replicaSet=tripling-rs&directConnection=true' TEST_MONGODB_DATABASE=tripling_browser_test npm run test:browser
 ```
 
-These checks create two local test accounts and a trip, exercise the complete approval/chat workflow, and capture desktop/mobile screenshots in ignored `work/browser-check/`. The script refuses non-local server origins. The GitHub Actions workflow runs database and deployment-control tests on main-branch pushes and pull requests, and deploys main to AWS only after its OIDC role and repository variables are configured.
+Browser tests create test accounts and trips; they reject non-local web origins. Screenshots go to ignored `work/browser-check/`.
 
-## Database and migrations
+## AWS and existing data
 
-`server/migrations/*.sql` defines the schema. Startup applies new migrations in order, under a PostgreSQL advisory lock, before listening for requests. Applied migrations are checksum-protected; add new migrations instead of editing an applied file. `npm run migrate` runs them separately when needed.
+The selected production target is MongoDB Atlas on AWS Sydney (`ap-southeast-2`) and the existing Node.js application on ECS Fargate. [AWS deployment](docs/aws-deployment.md) covers secrets, outbound networking, CI/CD and verification. [MongoDB cutover](docs/mongodb-migration.md) covers the read-only export, atomic import, content verification, paused writes and rollback limits.
 
-Sessions expire after seven days. Expired sessions and old throttle buckets are pruned on startup. Passwords and bearer session tokens are never placed in browser storage. The browser keeps only an allowlisted intended action in sessionStorage so login can return to a trip or action.
+**Do not deploy this release to the old PostgreSQL-only task configuration.** Deployment guards require a verified Atlas target and explicit cutover acknowledgement. The MongoDB-only code is not a live data migration by itself. Old sessions and incomplete Google flows are deliberately invalidated on transfer; users sign in again with the same password or linked Google account.
 
-The original prototype's localStorage records are not imported. This app starts with a clean database and cannot turn old unverified browser profiles into real accounts.
-
-## AWS deployment preparation
-
-**Target: `tripling.in` in Sydney (`ap-southeast-2`). The target AWS account is `669991883783` and DNS is at Hostinger. Authenticated AWS access and DNS/certificate setup are still required before the first live deployment.**
-
-See [the AWS deployment guide](docs/aws-deployment.md) for the one-time infrastructure, DNS/certificate, OIDC role, and GitHub configuration. Once configured, passing pushes to main deploy automatically. Until then the workflow explicitly reports deployment as not connected and skips AWS.
-
-The intended architecture is:
-
-```text
-Browser → HTTPS Application Load Balancer → ECS Fargate frontend/API
-                                                 ↓
-                                        private RDS PostgreSQL
-                                                 ↑
-                                 credentials in Secrets Manager
-```
-
-- `infra/foundation.yaml`: VPC, two public load-balancer subnets, two private application/database subnets, ECR repository, encrypted RDS PostgreSQL, one-day default automated backups, generated database credentials, private ECR/Logs/Secrets Manager endpoints, and an S3 gateway endpoint for image layers. There is no NAT gateway by default and no public database. Google sign-in can optionally enable a billable NAT gateway for outbound HTTPS; see [Google setup](docs/google-sign-in.md).
-- `infra/service.yaml`: HTTPS load balancer, ACM certificate binding, HTTP-to-HTTPS redirect, non-root Fargate container, scoped IAM roles, health checks, rolling deployments with circuit-breaker rollback, CloudWatch logs, and CPU-based scaling from one to three tasks.
-- `Dockerfile`: Node.js 22 container with production dependencies and bundled RDS trust roots. Production database connections require certificate-verified TLS. AWS credentials come from the ECS task role; the application retrieves its database secret without exposing it to the browser.
-- `scripts/deploy-aws.sh`: initial infrastructure setup and explicit infrastructure updates.
-- `.github/workflows/deploy.yml` and `scripts/deploy-release.sh`: tested main-branch application releases using GitHub OIDC, digest-pinned images, ECS rollout verification, HTTPS smoke checks, and rollback on failure. No long-lived AWS keys are stored in GitHub.
-- `infra/github-oidc.yaml`, `infra/certificate.yaml`, and `infra/dns.yaml`: least-privilege release role, regional ACM certificate, and apex-safe Route 53 alias.
-
-For the initial deployment, you need AWS CLI credentials with the necessary permissions, Docker, a domain, and an issued ACM certificate for that domain in the chosen region. Review the templates, service limits, and cost estimate in your account first. Region defaults to Sydney (`ap-southeast-2`) and is configurable; no region has been provisioned.
-
-```sh
-# Run after connecting AWS and supplying the public operator details.
-export AWS_REGION=ap-southeast-2
-export TRIPLING_DOMAIN=tripling.in
-export TRIPLING_CERTIFICATE_ARN='<issued ACM certificate ARN in this region>'
-export LEGAL_OPERATOR_NAME=Tripling
-export LEGAL_CONTACT_EMAIL=abhishek@tripling.in
-export LEGAL_JURISDICTION="Chandigarh, India"
-TRIPLING_DEPLOY_APPROVED=yes ./scripts/deploy-aws.sh
-```
-
-The script prints the load balancer DNS target. Add a DNS alias/CNAME for your hostname, then verify `/healthz` and signup/login over HTTPS. Application versions are released by GitHub Actions after setup; apply infrastructure changes using the bootstrap script from the current clean commit. `TRIPLING_MULTI_AZ=true` enables a standby RDS instance for higher database availability. Database deletion protection is enabled; snapshots, the secret, logs, and ECR repository have retention policies.
-
-AWS validation here is schema-level only. Account permissions, quotas, region-specific availability, DNS, certificate validity, and actual cloud connectivity still require testing during a future authorized deployment. This setup incurs charges for RDS, Fargate, the load balancer, private interface endpoints in both AZs, Secrets Manager, logs, storage, and image scans. Review those costs before enabling deployment.
-
-## API overview
-
-| Area                  | Routes                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------- |
-| Accounts              | `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session`       |
-| Profile and discovery | `PUT /api/profile`, `GET /api/bootstrap`                                                                |
-| Trips                 | `POST /api/trips`, `POST /api/trips/:id/cancel`, `PUT /api/trips/:id/save`                              |
-| Requests              | `POST /api/trips/:id/requests`, `DELETE /api/trips/:id/requests`, `PUT /api/trips/:id/requests/:userId` |
-| Group                 | `GET /api/trips/:id/members`, `GET/POST /api/trips/:id/messages`                                        |
-| Trust                 | `POST /api/reports`, `GET/POST /api/trips/:id/reviews`                                                  |
-| Notifications         | `POST /api/notifications/read`                                                                          |
-| Legal                 | `GET /terms`, `GET /privacy`, `GET /api/legal`                                                          |
-| Health                | `GET /healthz`                                                                                          |
-
-Write requests require JSON and a same-origin `Origin` header. Production uses `PUBLIC_ORIGIN` and secure `__Host-` cookies. Queries are parameterized; ownership, membership, dates, capacity, and eligibility are enforced on the server.
-
-## Remaining launch work
-
-The reporting database is implemented; a moderator console, operational review process, password-recovery flow, and account-deletion UI are not. Terms and Privacy pages are implemented; the supplied operator details are configured, and jurisdiction-specific legal review remains an operating responsibility. Gender eligibility is self-declared, not identity verification. Chat polling returns the newest 100 messages; large-scale discovery, chat pagination, automated abuse detection, and full observability/alerting need further work. The initial deployment uses one database credential for migrations and runtime; separate database roles and a credential-rotation/restart process should be established for a production operating environment. Database backup restoration should be exercised before real users depend on it.
-
-Photos: Unsplash. Fonts: DM Sans and Manrope with system fallbacks. RDS CA bundle: `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`; refresh it as part of certificate maintenance.
-
-Automated RDS backup retention defaults to one day for the current account-plan deployment. Set `TRIPLING_BACKUP_RETENTION_DAYS` explicitly to change it within the plan’s permitted limit (template range: 1–35 days). The earlier seven-day configuration was rejected by RDS. Inspect a failed stack’s status and remaining resources before deleting or recreating it; a `ROLLBACK_COMPLETE` stack cannot simply be updated. Retained secrets or repositories may remain after rollback and should not be removed without verifying they are unused.
-
-## Traveler accounts and trip history
-
-Registration requires first and last name. Existing accounts supply those fields in their profile before creating or joining trips. [Google sign-in setup](docs/google-sign-in.md) explains the real OAuth flow, credentials, and optional AWS outbound route.
-
-Location inputs provide keyboard-accessible prefix suggestions in alphabetical order from the database catalog and posted trip locations; custom destinations remain allowed. Completed trips are available under **Past trips**, with public reviews and counts. Travel dates use Asia/Kolkata.
-
-Published trips cannot be canceled or deleted through user APIs. Any member, including the creator, can leave; organizer duties transfer to the earliest remaining active registered member. If none remain, requests close and the trip record stays available. Participation history supports reviews after leaving, provided membership overlapped the trip dates. Existing pre-migration departures cannot be reconstructed from old records that were already removed.
-
-Signed-in users can search traveler names from their profile and block anyone with a category and a reason of at least 20 characters. A private reason is visible only to its author; selecting a shared trip makes the reason visible only to that trip's registered participants, including those who left. It is labeled as the author's statement, with a reporting option. Blocks restrict joining/approval and hide messages between the affected people; existing members remain free to leave. Reports are stored for operator follow-up; there is no automated moderation decision or emergency monitoring.
-
-Migration `003_travelers_and_history.sql` is additive and runs at server startup; it retains existing accounts and trips, backfills current participation, and leaves legacy names for users to complete rather than inventing last names. Legal documents are versioned to describe these features. Operator-mediated data removal requests remain available via the published contact.
+Existing RDS resources are kept in the legacy foundation template during cutover. New installations use `infra/foundation-mongodb.yaml` and do not create RDS. The helper selects the existing foundation shape without removing database resources. Retire the old database separately after backups and acceptance; this repository does not delete your production database.

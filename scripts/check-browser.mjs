@@ -212,11 +212,9 @@ try {
     .locator(".traveler-row")
     .filter({ hasText: "Browser Member" });
   await crewMember.locator("[data-traveler]").click();
-  await organizer
-    .locator("#block-form [name=tripId]")
-    .selectOption({
-      label: "Registered participants: A shared mountain weekend",
-    });
+  await organizer.locator("#block-form [name=tripId]").selectOption({
+    label: "Registered participants: A shared mountain weekend",
+  });
   await organizer
     .locator("#block-form [name=reason]")
     .fill("Repeatedly ignored our agreed communication boundaries.");
@@ -255,24 +253,34 @@ try {
   await member
     .getByText("Past journeys. Shared stories.", { exact: true })
     .waitFor();
-  if (process.env.TEST_DATABASE_URL) {
-    if (!new URL(process.env.TEST_DATABASE_URL).pathname.endsWith("_test"))
-      throw new Error(
-        "Past-trip browser fixture requires a dedicated _test database.",
-      );
-    const { default: pg } = await import("pg");
-    const db = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL });
+  if (process.env.TEST_MONGODB_URI) {
+    const databaseName = process.env.TEST_MONGODB_DATABASE || "tripling_test";
+    if (!databaseName.endsWith("_test"))
+      throw new Error("Past-trip fixtures require a dedicated _test database.");
+    const { createDatabase } = await import("../server/db.js");
+    const db = await createDatabase({
+      MONGODB_URI: process.env.TEST_MONGODB_URI,
+      MONGODB_DATABASE: databaseName,
+      NODE_ENV: "test",
+    });
     try {
-      await db.query(
-        "UPDATE trips SET starts_on='2020-01-01',ends_on='2020-01-03' WHERE id=$1",
-        [retained.id],
+      await db.update(
+        "trips",
+        { id: retained.id },
+        { $set: { starts_on: "2020-01-01", ends_on: "2020-01-03" } },
       );
-      await db.query(
-        "UPDATE trip_participants SET first_joined_at='2019-12-31',last_joined_at='2019-12-31' WHERE trip_id=$1",
-        [retained.id],
+      await db.updateMany(
+        "trip_participants",
+        { trip_id: retained.id },
+        {
+          $set: {
+            first_joined_at: new Date("2019-12-31"),
+            last_joined_at: new Date("2019-12-31"),
+          },
+        },
       );
     } finally {
-      await db.end();
+      await db.close();
     }
     await member.reload();
     await member.locator(".card-title").click();

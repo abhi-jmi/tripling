@@ -61,30 +61,37 @@ export async function publishLegalDocuments(pool, env = process.env) {
     });
   }
   await transaction(pool, async (db) => {
-    await db.query("SELECT pg_advisory_xact_lock(89432018)");
     for (const doc of documents)
-      await db.query(
-        "INSERT INTO legal_documents(slug,version,title,content,operator_name,contact_email,jurisdiction,effective_on,published) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING",
-        [
-          doc.slug,
-          doc.version,
-          doc.title,
-          JSON.stringify(doc.content),
-          config.operator,
-          config.contact,
-          config.jurisdiction,
-          doc.effectiveOn,
-          config.published,
-        ],
+      await db.update(
+        "legal_documents",
+        { slug: doc.slug, version: doc.version },
+        {
+          $setOnInsert: {
+            slug: doc.slug,
+            version: doc.version,
+            title: doc.title,
+            content: doc.content,
+            operator_name: config.operator,
+            contact_email: config.contact,
+            jurisdiction: config.jurisdiction,
+            effective_on: doc.effectiveOn,
+            published: config.published,
+            created_at: new Date(),
+          },
+        },
+        { upsert: true },
       );
   });
 }
 export async function currentLegalDocuments(db, { production = false } = {}) {
-  const rows = await db.query(
-    `SELECT DISTINCT ON(slug) slug,version,title,content,operator_name,contact_email,jurisdiction,effective_on,published FROM legal_documents WHERE ($1=false OR published=true) ORDER BY slug,published DESC,created_at DESC,version DESC`,
-    [production],
+  const docs = await db.all(
+    "legal_documents",
+    production ? { published: true } : {},
+    { sort: { slug: 1, published: -1, created_at: -1, version: -1 } },
   );
-  return Object.fromEntries(rows.rows.map((doc) => [doc.slug, doc]));
+  const result = {};
+  for (const doc of docs) if (!result[doc.slug]) result[doc.slug] = doc;
+  return result;
 }
 export function legalMetadata(documents) {
   return Object.fromEntries(

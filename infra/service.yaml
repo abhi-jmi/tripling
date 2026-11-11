@@ -1,6 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling HTTPS frontend and API on ECS Fargate. No resources are created until explicitly deployed.
 Parameters:
+  MongoDBSecretArn:
+    Type: String
+    Description: Secrets Manager JSON with uri for the verified Atlas cutover target
+    AllowedPattern: "arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
+  LegacyDatabaseSecretArn:
+    Type: String
+    Default: ""
+    Description: Temporary scoped legacy RDS secret access for pre-write rollback; empty on new installations
+    AllowedPattern: "^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
+  MongoDBDatabase:
+    Type: String
+    Default: tripling
+    AllowedPattern: "[a-zA-Z0-9_-]{1,63}"
   GoogleOAuthSecretArn:
     Type: String
     Default: ""
@@ -38,6 +51,7 @@ Parameters:
     MinLength: 1
     MaxLength: 200
 Conditions:
+  LegacyRollbackEnabled: !Not [!Equals [!Ref LegacyDatabaseSecretArn, ""]]
   GoogleEnabled: !Not [!Equals [!Ref GoogleOAuthSecretArn, ""]]
 Resources:
   Cluster:
@@ -93,14 +107,19 @@ Resources:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: ReadDatabaseCredentials
+        - PolicyName: ReadMongoDBCredentials
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource:
-                  Fn::ImportValue: !Sub "${FoundationStack}-DatabaseSecretArn"
+                Resource: !Ref MongoDBSecretArn
+              - !If
+                - LegacyRollbackEnabled
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref LegacyDatabaseSecretArn
+                - !Ref AWS::NoValue
               - !If
                 - GoogleEnabled
                 - Effect: Allow
@@ -230,16 +249,10 @@ Resources:
               Value: !Sub "https://${DomainName}"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
-            - Name: DB_HOST
-              Value:
-                Fn::ImportValue: !Sub "${FoundationStack}-DatabaseHost"
-            - Name: DB_NAME
-              Value: tripling
-            - Name: DB_SECRET_ARN
-              Value:
-                Fn::ImportValue: !Sub "${FoundationStack}-DatabaseSecretArn"
-            - Name: DB_SSL_CA
-              Value: /app/certs/global-bundle.pem
+            - Name: MONGODB_SECRET_ARN
+              Value: !Ref MongoDBSecretArn
+            - Name: MONGODB_DATABASE
+              Value: !Ref MongoDBDatabase
           LogConfiguration:
             LogDriver: awslogs
             Options:
