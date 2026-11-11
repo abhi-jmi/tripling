@@ -14,6 +14,11 @@ Parameters:
     Type: String
     Default: tripling
     AllowedPattern: "[a-zA-Z0-9_-]{1,63}"
+  GooglePlacesSecretArn:
+    Type: String
+    Default: ""
+    Description: Optional Secrets Manager JSON apiKey for server-side Places API (New)
+    AllowedPattern: "^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
   GoogleOAuthSecretArn:
     Type: String
     Default: ""
@@ -51,6 +56,7 @@ Parameters:
     MinLength: 1
     MaxLength: 200
 Conditions:
+  PlacesEnabled: !Not [!Equals [!Ref GooglePlacesSecretArn, ""]]
   LegacyRollbackEnabled: !Not [!Equals [!Ref LegacyDatabaseSecretArn, ""]]
   GoogleEnabled: !Not [!Equals [!Ref GoogleOAuthSecretArn, ""]]
 Resources:
@@ -119,6 +125,12 @@ Resources:
                 - Effect: Allow
                   Action: secretsmanager:GetSecretValue
                   Resource: !Ref LegacyDatabaseSecretArn
+                - !Ref AWS::NoValue
+              - !If
+                - PlacesEnabled
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref GooglePlacesSecretArn
                 - !Ref AWS::NoValue
               - !If
                 - GoogleEnabled
@@ -233,6 +245,8 @@ Resources:
           Environment:
             - Name: NODE_ENV
               Value: production
+            - Name: GOOGLE_PLACES_SECRET_ARN
+              Value: !Ref GooglePlacesSecretArn
             - Name: GOOGLE_OAUTH_SECRET_ARN
               Value: !Ref GoogleOAuthSecretArn
             - Name: APP_VERSION

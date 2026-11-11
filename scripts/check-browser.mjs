@@ -155,6 +155,40 @@ try {
   );
   await organizer.locator("#destination").fill("");
   await organizer.locator("#destination").press("Escape");
+  // Exercise Google rendering without paid external calls or real credentials.
+  await organizer.route("**/api/locations?*", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("q") === "jawa")
+      return route.fulfill({
+        json: {
+          provider: "google",
+          locations: ["Jawalamukhi"],
+          suggestions: [
+            {
+              value: "Jawalamukhi",
+              label: "Jawalamukhi, Himachal Pradesh, India",
+            },
+          ],
+        },
+      });
+    return route.continue();
+  });
+  for (const selector of ["#destination", "#origin"]) {
+    await organizer.locator(selector).fill("jawa");
+    const options = organizer.locator(".location-options:not([hidden])");
+    await options
+      .getByRole("option", { name: "Jawalamukhi, Himachal Pradesh, India" })
+      .waitFor();
+    assert(await options.getByAltText("Powered by Google").isVisible());
+    await organizer.locator(selector).press("ArrowDown");
+    await organizer.locator(selector).press("Enter");
+    assert.equal(await organizer.locator(selector).inputValue(), "Jawalamukhi");
+    assert.equal(
+      await organizer.locator(selector).getAttribute("aria-expanded"),
+      "false",
+    );
+    await organizer.locator(selector).fill("");
+    await organizer.locator(selector).press("Escape");
+  }
   await organizer.screenshot({
     path: resolve("work/browser-check/discovery-desktop.png"),
     fullPage: true,

@@ -48,6 +48,7 @@ if [[ "$foundation_template" == infra/foundation.yaml ]]; then
   [[ "$legacy_secret" == arn:*:secretsmanager:* ]] || { echo 'Legacy rollback secret could not be resolved.' >&2; exit 1; }
   service_options+=("LegacyDatabaseSecretArn=$legacy_secret")
 fi
+if [[ -n ${TRIPLING_PLACES_SECRET_ARN+x} ]]; then service_options+=("GooglePlacesSecretArn=$TRIPLING_PLACES_SECRET_ARN"); fi
 if [[ -n ${TRIPLING_GOOGLE_SECRET_ARN+x} ]]; then service_options+=("GoogleOAuthSecretArn=$TRIPLING_GOOGLE_SECRET_ARN"); fi
 aws cloudformation deploy --template-file infra/service.yaml --stack-name "$service" --region "$region" --capabilities CAPABILITY_IAM --parameter-overrides FoundationStack="$foundation" MongoDBSecretArn="$TRIPLING_MONGODB_SECRET_ARN" MongoDBDatabase="${TRIPLING_MONGODB_DATABASE:-tripling}" ImageTag="$image_tag" CertificateArn="$TRIPLING_CERTIFICATE_ARN" DomainName="$TRIPLING_DOMAIN" "LegalOperatorName=$LEGAL_OPERATOR_NAME" "LegalContactEmail=$LEGAL_CONTACT_EMAIL" "LegalJurisdiction=$LEGAL_JURISDICTION" "${service_options[@]}" --no-fail-on-empty-changeset
 aws cloudformation describe-stacks --stack-name "$service" --region "$region" --query "Stacks[0].Outputs" --output table --no-cli-pager

@@ -34,6 +34,29 @@ if (process.env.GOOGLE_OAUTH_SECRET_ARN) {
     client.destroy();
   }
 }
+if (process.env.GOOGLE_PLACES_SECRET_ARN) {
+  const { SecretsManagerClient, GetSecretValueCommand } =
+    await import("@aws-sdk/client-secrets-manager");
+  const client = new SecretsManagerClient({});
+  try {
+    const result = await client.send(
+      new GetSecretValueCommand({
+        SecretId: process.env.GOOGLE_PLACES_SECRET_ARN,
+      }),
+    );
+    let credentials;
+    try {
+      credentials = JSON.parse(result.SecretString || "{}");
+    } catch {
+      throw new Error("Google Places secret must be valid JSON.");
+    }
+    if (typeof credentials.apiKey !== "string" || !credentials.apiKey.trim())
+      throw new Error("Google Places secret requires apiKey.");
+    process.env.GOOGLE_PLACES_API_KEY = credentials.apiKey.trim();
+  } finally {
+    client.destroy();
+  }
+}
 legalConfiguration();
 const pool = await createDatabase();
 await migrate(pool);

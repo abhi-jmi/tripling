@@ -1,4 +1,5 @@
 import express from "express";
+import { createPlacesAutocomplete } from "./places.js";
 import helmet from "helmet";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
@@ -82,6 +83,7 @@ export function createApp(
     production = process.env.NODE_ENV === "production",
     publicOrigin = process.env.PUBLIC_ORIGIN,
     googleAdapter = null,
+    placesAdapter = createPlacesAutocomplete(),
   } = {},
 ) {
   const app = express();
@@ -304,7 +306,12 @@ export function createApp(
     personName,
     googleAdapter,
   });
-  registerTripRoutes(app, pool, { requireUser, throttle, publicUser });
+  registerTripRoutes(app, pool, {
+    requireUser,
+    throttle,
+    publicUser,
+    placesAdapter,
+  });
   registerBlockRoutes(app, pool, { requireUser, throttle });
   app.use("/api", (req, res) =>
     res.status(404).json({ error: "API endpoint not found." }),

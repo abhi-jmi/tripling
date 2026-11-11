@@ -56,3 +56,5 @@ The selected production target is MongoDB Atlas on AWS Sydney (`ap-southeast-2`)
 **Do not deploy this release to the old PostgreSQL-only task configuration.** Deployment guards require a verified Atlas target and explicit cutover acknowledgement. The MongoDB-only code is not a live data migration by itself. Old sessions and incomplete Google flows are deliberately invalidated on transfer; users sign in again with the same password or linked Google account.
 
 Existing RDS resources are kept in the legacy foundation template during cutover. New installations use `infra/foundation-mongodb.yaml` and do not create RDS. The helper selects the existing foundation shape without removing database resources. Retire the old database separately after backups and acceptance; this repository does not delete your production database.
+
+City autocomplete can use Google Places API (New); see [Google Places setup](docs/google-places.md) for server-side key restrictions, AWS secret configuration and deployment.

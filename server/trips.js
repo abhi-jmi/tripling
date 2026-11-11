@@ -120,7 +120,7 @@ async function crewLocks(db, id, user) {
 export function registerTripRoutes(
   app,
   pool,
-  { requireUser, throttle, publicUser },
+  { requireUser, throttle, publicUser, placesAdapter },
 ) {
   app.get("/api/locations", async (req, res) => {
     const q = z
@@ -129,6 +129,24 @@ export function registerTripRoutes(
         .max(60)
         .parse(req.query.q || ""),
       pattern = prefix(q);
+    let message;
+    if (placesAdapter) {
+      if (q.length < 2)
+        return res.json({ provider: "google", locations: [], suggestions: [] });
+      await throttle(req, `places-ip:${req.ip}`, 120);
+      await throttle(req, "places-total", 2000);
+      try {
+        const suggestions = await placesAdapter(q);
+        return res.json({
+          provider: "google",
+          locations: suggestions.map((s) => s.value),
+          suggestions,
+        });
+      } catch {
+        message =
+          "Google Places is temporarily unavailable. Showing saved cities; you can also type a city.";
+      }
+    }
     const [catalog, trips] = await Promise.all([
       pool.all("location_catalog", { name: pattern }),
       pool.all(
@@ -145,6 +163,8 @@ export function registerTripRoutes(
       if (pattern.test(name) && !names.has(name.toLowerCase()))
         names.set(name.toLowerCase(), name);
     res.json({
+      provider: "local",
+      ...(message ? { message } : {}),
       locations: [...names.values()]
         .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
         .slice(0, 15),
@@ -315,20 +335,16 @@ export function registerTripRoutes(
     res.status(201).json({ id });
   });
   app.post("/api/trips/:id/cancel", requireUser, (req, res) =>
-    res
-      .status(405)
-      .json({
-        error:
-          "Trip records cannot be canceled or deleted by users. Leave the trip instead; its history is retained.",
-      }),
+    res.status(405).json({
+      error:
+        "Trip records cannot be canceled or deleted by users. Leave the trip instead; its history is retained.",
+    }),
   );
   app.delete("/api/trips/:id", requireUser, (req, res) =>
-    res
-      .status(405)
-      .json({
-        error:
-          "Trip records are retained. You can leave a trip, but cannot delete it.",
-      }),
+    res.status(405).json({
+      error:
+        "Trip records are retained. You can leave a trip, but cannot delete it.",
+    }),
   );
   app.put("/api/trips/:id/save", requireUser, async (req, res) => {
     const id = uuid.parse(req.params.id),
@@ -557,15 +573,13 @@ export function registerTripRoutes(
       records.map((m) => m.user_id),
     );
     res.json({
-      messages: records
-        .reverse()
-        .map((m) => ({
-          id: m.id,
-          user_id: m.user_id,
-          name: people.get(m.user_id)?.display_name || "Former traveler",
-          body: m.body,
-          created_at: m.created_at,
-        })),
+      messages: records.reverse().map((m) => ({
+        id: m.id,
+        user_id: m.user_id,
+        name: people.get(m.user_id)?.display_name || "Former traveler",
+        body: m.body,
+        created_at: m.created_at,
+      })),
     });
   });
   app.post("/api/trips/:id/messages", requireUser, async (req, res) => {
