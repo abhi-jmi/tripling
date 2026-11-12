@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  TRAVEL_STYLES,
+  LEGACY_STYLES,
+  groupOf,
+  eligibleForGroup,
+  tripOptions,
+} from "./trip-options.js";
 import { transaction, lockTrip, lockTravelers } from "./db.js";
 import {
   travelDate,
@@ -20,18 +27,27 @@ const tripSchema = z
     title: z.string().trim().min(3).max(65),
     from: z.string().trim().min(1).max(60),
     destination: z.string().trim().min(1).max(60),
+    destinationPlaceId: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]{1,250}$/)
+      .optional(),
     start: z.iso.date(),
     end: z.iso.date(),
     min: z.number().int().min(0).max(1000000),
     max: z.number().int().min(0).max(1000000),
     going: z.number().int().min(1).max(19),
     seats: z.number().int().min(1).max(19),
-    category: z.enum(["Mountains", "Beach", "Adventure", "Weekend"]),
+    category: z.enum([...TRAVEL_STYLES, ...LEGACY_STYLES]),
+    groupEligibility: z.enum(["men", "women", "mixed"]).optional(),
+    fromPlaceId: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]{1,250}$/)
+      .optional(),
     mode: z.enum(["Bus", "Train", "Shared cab", "Self-drive", "Flight"]),
     description: z.string().trim().min(25).max(1200),
     plan: z.string().trim().max(2000).default(""),
     rules: z.string().trim().max(1200).default(""),
-    women: z.boolean(),
+    women: z.boolean().default(false),
     age: z.literal(true),
   })
   .refine((t) => t.end >= t.start, {
@@ -70,7 +86,12 @@ function serialize(t) {
     ),
     total: t.capacity,
     category: t.category,
-    tags: [t.category, ...(t.women_only ? ["Women only"] : [])],
+    tags: [
+      t.category,
+      tripOptions.groups.find((g) => g.value === groupOf(t))?.label ||
+        "Mixed Group",
+    ],
+    groupEligibility: groupOf(t),
     women: t.women_only,
     description: t.description,
     plan: t.plan,
@@ -214,6 +235,7 @@ export function registerTripRoutes(
         });
       });
     const result = {
+      options: tripOptions,
       user: req.user ? publicUser(req.user) : null,
       today: travelDate(),
       trips: tripList,
@@ -298,8 +320,12 @@ export function registerTripRoutes(
     if (!req.user.adult_confirmed)
       fail(403, "Confirm your 18+ profile before creating a trip.");
     if (d.start < travelDate()) fail(400, "Departure must be today or later.");
-    if (d.women && req.user.gender !== "woman")
-      fail(403, "Set your eligibility before creating a women-only trip.");
+    const group = d.groupEligibility || (d.women ? "women" : "mixed");
+    if (!eligibleForGroup(group, req.user.gender))
+      fail(
+        403,
+        "Complete your self-declared gender profile before creating a restricted group.",
+      );
     const image =
       d.category === "Beach"
         ? "goa"
@@ -314,6 +340,9 @@ export function registerTripRoutes(
         organizer_id: req.user.id,
         title: d.title,
         destination: d.destination,
+        ...(d.destinationPlaceId
+          ? { destination_place_id: d.destinationPlaceId }
+          : {}),
         from_city: d.from,
         starts_on: d.start,
         ends_on: d.end,
@@ -323,7 +352,9 @@ export function registerTripRoutes(
         capacity: d.going + d.seats,
         category: d.category,
         mode: d.mode,
-        women_only: d.women,
+        women_only: group === "women",
+        group_eligibility: group,
+        ...(d.fromPlaceId ? { from_place_id: d.fromPlaceId } : {}),
         description: d.description,
         plan: d.plan,
         rules: d.rules,
@@ -380,8 +411,11 @@ export function registerTripRoutes(
           409,
           "This trip has no active organizer. Its record remains available, but new requests are closed.",
         );
-      if (t.women_only && req.user.gender !== "woman")
-        fail(403, "Only eligible travelers can request this women-only trip.");
+      if (!eligibleForGroup(groupOf(t), req.user.gender))
+        fail(
+          403,
+          "This group is restricted by self-declared gender. Check Group Eligibility and complete your profile if needed.",
+        );
       const crew = await crewLocks(db, id, req.user.id);
       if (crew.some((m) => m.user_id === req.user.id))
         fail(409, "You are already a member.");
@@ -477,7 +511,7 @@ export function registerTripRoutes(
         if (
           !user?.adult_confirmed ||
           !profileComplete(user) ||
-          (t.women_only && user.gender !== "woman")
+          !eligibleForGroup(groupOf(t), user.gender)
         )
           fail(403, "This traveler is no longer eligible.");
         if (await blockedWithCrew(db, id, userId))

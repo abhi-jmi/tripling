@@ -14,7 +14,7 @@ export function createPlacesAutocomplete({
           "Content-Type": "application/json",
           "X-Goog-Api-Key": apiKey,
           "X-Goog-FieldMask":
-            "suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text",
+            "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.structuredFormat.mainText.text",
         },
         body: JSON.stringify({
           input,
@@ -43,7 +43,13 @@ export function createPlacesAutocomplete({
         const label = place?.text?.text?.trim();
         if (!value || !label || value.length > 60 || seen.has(label)) return [];
         seen.add(label);
-        return [{ value, label }];
+        return [
+          {
+            value,
+            label,
+            ...(place.placeId ? { placeId: place.placeId } : {}),
+          },
+        ];
       })
       .slice(0, 5);
   };

@@ -1,4 +1,6 @@
 import express from "express";
+import { GENDERS } from "./trip-options.js";
+import { createCityResolver, registerNearbyRoutes } from "./nearby.js";
 import { createPlacesAutocomplete } from "./places.js";
 import helmet from "helmet";
 import { z } from "zod";
@@ -73,7 +75,8 @@ const profileSchema = z.object({
   firstName: personName,
   lastName: personName,
   city: z.string().trim().max(60),
-  gender: z.enum(["", "woman", "other"]),
+  gender: z.enum(["", ...GENDERS.map((g) => g.value)]),
+  genderDescription: z.string().trim().max(100).default(""),
   bio: z.string().trim().max(500),
   age: z.literal(true, { error: "You must be 18 or older to use Tripling." }),
 });
@@ -84,6 +87,7 @@ export function createApp(
     publicOrigin = process.env.PUBLIC_ORIGIN,
     googleAdapter = null,
     placesAdapter = createPlacesAutocomplete(),
+    cityResolver = createCityResolver(),
   } = {},
 ) {
   const app = express();
@@ -288,6 +292,8 @@ export function createApp(
           display_name: d.firstName + " " + d.lastName,
           city: d.city,
           gender: d.gender,
+          gender_description:
+            d.gender === "self-describe" ? d.genderDescription : "",
           bio: d.bio,
           adult_confirmed: true,
           first_name: d.firstName,
@@ -306,6 +312,7 @@ export function createApp(
     personName,
     googleAdapter,
   });
+  registerNearbyRoutes(app, pool, { throttle, cityResolver });
   registerTripRoutes(app, pool, {
     requireUser,
     throttle,

@@ -89,6 +89,7 @@ export function publicUser(row) {
     googleLinked: !!row.google_linked,
     city: row.city,
     gender: row.gender,
+    genderDescription: row.gender_description || "",
     bio: row.bio,
     age: row.adult_confirmed,
   };
