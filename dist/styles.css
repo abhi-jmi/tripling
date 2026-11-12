@@ -2875,17 +2875,6 @@ body.auth-screen {
   height: 14px;
   max-width: none;
 }
-.radius-field {
-  min-width: 155px;
-}
-.radius-field select {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: #203a2f;
-  font: inherit;
-  padding: 10px 0;
-}
 .nearby-status {
   margin: 10px 0;
   font-size: 13px;
