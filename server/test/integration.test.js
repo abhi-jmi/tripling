@@ -52,11 +52,13 @@ await new Promise((resolve) => server.once("listening", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 class Client {
   cookie = "";
+  ip = null;
   async request(path, { method = "GET", body, origin = base } = {}) {
     const response = await fetch(base + "/api" + path, {
       method,
       headers: {
         "Content-Type": "application/json",
+        ...(this.ip ? {"X-Forwarded-For":this.ip} : {}),
         ...(origin ? { Origin: origin } : {}),
         ...(this.cookie ? { Cookie: this.cookie } : {}),
       },
@@ -1076,6 +1078,73 @@ try {
           (await owner.request("/auth/providers")).body.googleLinked,
           true,
         );
+      },
+    );
+    await t.test(
+      "new group eligibility, gender and style preserve legacy contracts",
+      async () => {
+        const restricted = new Client();
+        restricted.ip = "198.51.100.4";
+        const restrictedUser = await restricted.signup(
+          "restricted-group@example.test",
+        );
+        const original = (await owner.request("/auth/session")).body.user
+          .gender;
+        await owner.profile("Organizer", "man");
+        const created = await owner.request("/trips", {
+          method: "POST",
+          body: { ...trip, groupEligibility: "men", category: "Backpacking" },
+        });
+        assert.equal(created.status, 201);
+        const id = created.body.id;
+        await restricted.profile("Bob", "woman");
+        assert.equal(
+          (
+            await restricted.request(`/trips/${id}/requests`, {
+              method: "POST",
+              body: { note: "I would like to join this group." },
+            })
+          ).status,
+          403,
+        );
+        await restricted.profile("Bob", "man");
+        assert.equal(
+          (
+            await restricted.request(`/trips/${id}/requests`, {
+              method: "POST",
+              body: { note: "I would like to join this group." },
+            })
+          ).status,
+          201,
+        );
+        await restricted.profile("Bob", "non-binary");
+        assert.equal(
+          (
+            await owner.request(`/trips/${id}/requests/${restrictedUser.id}`, {
+              method: "PUT",
+              body: { status: "accepted" },
+            })
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await owner.request("/trips", {
+              method: "POST",
+              body: { ...trip, from: "  " },
+            })
+          ).status,
+          400,
+        );
+        const publicTrip = (
+          await anonymous.request("/bootstrap")
+        ).body.trips.find((t) => t.id === id);
+        assert.equal(publicTrip.groupEligibility, "men");
+        assert.equal(publicTrip.category, "Backpacking");
+        assert.equal(publicTrip.gender, undefined);
+        const options = (await anonymous.request("/bootstrap")).body.options;
+        assert.equal(options.travelStyles.length, 10);
+        await owner.profile("Organizer", original || "other");
       },
     );
     await t.test(

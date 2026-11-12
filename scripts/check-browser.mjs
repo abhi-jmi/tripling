@@ -189,6 +189,50 @@ try {
     await organizer.locator(selector).fill("");
     await organizer.locator(selector).press("Escape");
   }
+  const bootstrap = await organizer.evaluate(async () =>
+    (await fetch("/api/bootstrap")).json(),
+  );
+  const nearestId = bootstrap.trips.find(
+    (t) => t.title === "A shared mountain weekend",
+  ).id;
+  await organizer.route("**/api/trips/nearby?*", (route) =>
+    route.fulfill({
+      json: {
+        center: "Manali, India",
+        radiusKm: 50,
+        results: [{ id: nearestId, distanceKm: 12.3 }],
+        partial: false,
+      },
+    }),
+  );
+  await organizer.locator("#destination").fill("Manali");
+  await organizer.locator("#departure").fill("");
+  await organizer
+    .locator("#search-form")
+    .evaluate((form) => form.requestSubmit());
+  await organizer
+    .locator("#nearby-status")
+    .getByText(/Destinations within 50 km/)
+    .waitFor();
+  await organizer
+    .locator(".nearby-distance")
+    .getByText(/12.3 km/)
+    .waitFor();
+  await organizer.locator("#destination").fill("");
+  await organizer.locator("#origin").fill("Delhi");
+  await organizer
+    .locator("#search-form")
+    .evaluate((form) => form.requestSubmit());
+  await organizer
+    .locator("#nearby-status")
+    .getByText(/Starting points within 50 km/)
+    .waitFor();
+  await organizer
+    .locator(".nearby-distance")
+    .getByText(/starting point/)
+    .waitFor();
+  await organizer.locator("#origin").fill("");
+  await organizer.locator("#search-radius").selectOption("0");
   await organizer.screenshot({
     path: resolve("work/browser-check/discovery-desktop.png"),
     fullPage: true,

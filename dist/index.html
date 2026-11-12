@@ -330,10 +330,33 @@
                     name="origin"
                     placeholder="Your city"
                     autocomplete="off" /></span></label
+              ><label class="search-field radius-field"
+                ><span
+                  ><span class="field-title">SEARCH RADIUS</span
+                  ><select
+                    id="search-radius"
+                    name="radius"
+                    aria-label="Trip location search radius"
+                  >
+                    <option value="0">Text search only</option>
+                    <option value="25">Within 25 km</option>
+                    <option value="50" selected>Within 50 km</option>
+                    <option value="100">Within 100 km</option>
+                  </select></span
+                ></label
               ><button class="search-button" type="submit">
                 <span data-icon="search"></span> Find my people
               </button>
             </form>
+            <p id="nearby-status" class="nearby-status" role="status"></p>
+            <div id="nearby-attribution" hidden>
+              <img
+                src="/assets/powered-by-google.png"
+                width="120"
+                height="14"
+                alt="Powered by Google"
+              />
+            </div>
             <div class="popular">
               A little inspiration <span>↗</span
               ><button data-destination="Manali">Manali</button

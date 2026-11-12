@@ -18,6 +18,7 @@ export const COLLECTIONS = [
   "user_blocks",
   "block_reason_reports",
   "location_catalog",
+  "place_coordinates",
   "oauth_identities",
   "oauth_flows",
   "oauth_pending",
@@ -74,6 +75,10 @@ const indexes = {
       { unique: true, partialFilterExpression: { ended_at: null } },
     ],
     [{ context_trip_id: 1 }, {}],
+  ],
+  place_coordinates: [
+    [{ key: 1 }, { unique: true }],
+    [{ expires_at: 1 }, { expireAfterSeconds: 0 }],
   ],
   location_catalog: [[{ name: 1 }, { unique: true }]],
   oauth_identities: [

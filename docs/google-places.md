@@ -9,7 +9,7 @@ searches and stored trips remain compatible. Free text remains supported.
 
 The API key stays on the backend, not in HTML or JavaScript. Only the typed text
 is sent; account identities, dates and browser IP addresses are not forwarded.
-Google sees the backend's public egress IP. Predictions are not cached or stored.
+Google sees the backend's public egress IP. Predictions are not cached. Selected Place IDs can be stored on trips. Nearby search uses a separate 29-day, automatically expiring city-coordinate cache.
 Each debounced call is billed individually: no session tokens or Place Details
 requests are used. Queries shorter than two characters do not call Google.
 Requests are limited to 120 per IP and 2,000 globally per fifteen minutes, across
@@ -77,3 +77,5 @@ For local development, use `GOOGLE_PLACES_API_KEY` in an untracked environment
 file and configure key restrictions for that development backend separately.
 Never reuse the production key in browser tests. Automated tests mock Google;
 live billing/API-key activation must be verified in the deployed environment.
+
+Nearby search supports destination and origin city centers through `/api/trips/nearby`, defaults to 50 km, and shows straight-line distances. It adds Place Details calls and may resolve a saved city name through city autocomplete. Ambiguous historical names are excluded with a partial-results notice. Quotas and API-key restrictions still apply. See [upgrade progress](feature-upgrade-progress.md) for current catalog-size limits and remaining phases.

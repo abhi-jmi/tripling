@@ -82,9 +82,20 @@ let view = "login",
   maxBudget = 1000000,
   travelMode = "",
   womenFilter = false,
+  selectedStyle = "",
   visibleCount = 6,
   currentTrip = null;
 const trips = () => data.trips;
+let nearbySearch = null,
+  searchVersion = 0;
+const activeNearby = () =>
+  view === "discover" &&
+  nearbySearch?.query === $("#destination").value.trim().toLowerCase() &&
+  nearbySearch?.origin === $("#origin").value.trim().toLowerCase() &&
+  nearbySearch?.radius === +$("#search-radius").value
+    ? nearbySearch
+    : null;
+
 let modalVersion = 0,
   chatTimer = null,
   toastTimer = null;
@@ -305,7 +316,7 @@ function card(t) {
     owned = t.organizerId === data.user?.id,
     request = state.requests[t.id],
     incoming = data.incoming.filter((r) => r.trip_id === t.id).length;
-  return `<article class="trip-card"><div class="card-image"><img src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} travel inspiration" loading="lazy"><span class="match-badge">${icon(t.women ? "shield" : "compass")} ${t.lifecycle === "completed" ? `Completed · ${t.reviewCount} reviews` : !t.organizerId ? "Inactive plan" : t.status === "canceled" ? "Canceled" : t.women ? "Women-only crew" : t.seats ? "Open to join" : "Crew complete"}</span><button class="save-button ${saved ? "saved" : ""}" data-save="${esc(t.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(t.title)}" aria-pressed="${saved}">${icon("bookmark")}</button><span class="image-label">${icon("pin")} ${esc(t.destination)}</span></div><div class="card-content"><div class="card-tags">${t.tags.map((tag) => `<span class="tag ${tag === "Women only" ? "women" : ""}">${esc(tag)}</span>`).join("")}</div><button class="card-title" data-trip="${esc(t.id)}">${esc(t.title)}</button><p class="card-route">${esc(t.from)} → ${esc(t.destination)}</p><div class="card-info"><span>${icon("calendar")} ${range(t)}</span><span>${icon("clock")} ${duration(t)} days</span></div><div class="card-cost"><strong>${money(t.min)}–${money(t.max).slice(1)}</strong><span>/ person</span><span>${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div class="card-footer"><span class="avatar host-avatar">${esc(t.initials)}</span><div class="host-name">Planned by <strong>${esc(owned ? "you" : t.host)}</strong><span>${t.isMember ? "Your travel crew" : "Community traveler"}</span></div><button class="card-cta" data-trip="${esc(t.id)}">View trip ${icon("arrow-up-right")}</button></div>${view === "my-trips" ? `<div class="my-card-status"><span class="request-status">${t.status === "canceled" ? "Canceled" : owned ? "Organizer" : t.isMember ? "Joined" : request?.status === "pending" ? "Awaiting approval" : "Left trip"}</span>${owned && t.end >= today() ? `<button data-incoming="${esc(t.id)}">Requests (${incoming})</button>` : ""}${t.isMember ? `<button data-leave="${esc(t.id)}">Leave trip</button>` : request ? `<button data-leave="${esc(t.id)}">${request.status === "accepted" ? "Leave trip" : "Cancel request"}</button>` : ""}</div>${t.isMember ? `<button class="card-chat" data-chat="${esc(t.id)}">${icon("users")} Open group chat ${icon("arrow-right")}</button>` : ""}` : ""}</div></article>`;
+  return `<article class="trip-card"><div class="card-image"><img src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} travel inspiration" loading="lazy"><span class="match-badge">${icon(t.women ? "shield" : "compass")} ${t.lifecycle === "completed" ? `Completed · ${t.reviewCount} reviews` : !t.organizerId ? "Inactive plan" : t.status === "canceled" ? "Canceled" : t.women ? "Women-only crew" : t.seats ? "Open to join" : "Crew complete"}</span><button class="save-button ${saved ? "saved" : ""}" data-save="${esc(t.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(t.title)}" aria-pressed="${saved}">${icon("bookmark")}</button><span class="image-label">${icon("pin")} ${esc(t.destination)}</span></div><div class="card-content"><div class="card-tags">${t.tags.map((tag) => `<span class="tag ${tag === "Women only" ? "women" : ""}">${esc(tag)}</span>`).join("")}</div><button class="card-title" data-trip="${esc(t.id)}">${esc(t.title)}</button><p class="card-route">${esc(t.from)} → ${esc(t.destination)}</p>${activeNearby()?.distances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().distances.get(t.id)} km from your searched city · straight-line</p>` : ""}${activeNearby()?.originDistances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().originDistances.get(t.id)} km from searched starting point · straight-line</p>` : ""}<div class="card-info"><span>${icon("calendar")} ${range(t)}</span><span>${icon("clock")} ${duration(t)} days</span></div><div class="card-cost"><strong>${money(t.min)}–${money(t.max).slice(1)}</strong><span>/ person</span><span>${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div class="card-footer"><span class="avatar host-avatar">${esc(t.initials)}</span><div class="host-name">Planned by <strong>${esc(owned ? "you" : t.host)}</strong><span>${t.isMember ? "Your travel crew" : "Community traveler"}</span></div><button class="card-cta" data-trip="${esc(t.id)}">View trip ${icon("arrow-up-right")}</button></div>${view === "my-trips" ? `<div class="my-card-status"><span class="request-status">${t.status === "canceled" ? "Canceled" : owned ? "Organizer" : t.isMember ? "Joined" : request?.status === "pending" ? "Awaiting approval" : "Left trip"}</span>${owned && t.end >= today() ? `<button data-incoming="${esc(t.id)}">Requests (${incoming})</button>` : ""}${t.isMember ? `<button data-leave="${esc(t.id)}">Leave trip</button>` : request ? `<button data-leave="${esc(t.id)}">${request.status === "accepted" ? "Leave trip" : "Cancel request"}</button>` : ""}</div>${t.isMember ? `<button class="card-chat" data-chat="${esc(t.id)}">${icon("users")} Open group chat ${icon("arrow-right")}</button>` : ""}` : ""}</div></article>`;
 }
 function render() {
   let list = trips();
@@ -328,11 +339,20 @@ function render() {
         t.status === "open" &&
         !data.hidden.includes(t.id) &&
         t.end >= today() &&
-        (!dest || `${t.destination} ${t.title}`.toLowerCase().includes(dest)) &&
-        (!origin || t.from.toLowerCase().includes(origin)) &&
+        (!dest ||
+          (activeNearby()
+            ? activeNearby().distances
+              ? activeNearby().distances.has(t.id)
+              : `${t.destination} ${t.title}`.toLowerCase().includes(dest)
+            : `${t.destination} ${t.title}`.toLowerCase().includes(dest))) &&
+        (!origin ||
+          (activeNearby()?.originDistances
+            ? activeNearby().originDistances.has(t.id)
+            : t.from.toLowerCase().includes(origin))) &&
         (!when || (t.start <= when && t.end >= when)) &&
         (category === "All trips" ||
           (category === "Women only" ? t.women : t.category === category)) &&
+        (!selectedStyle || t.category === selectedStyle) &&
         t.min <= maxBudget &&
         (!travelMode || t.mode.toLowerCase().includes(travelMode)) &&
         (!womenFilter || t.women),
@@ -340,7 +360,16 @@ function render() {
   }
   const sort = $("#sort").value;
   list = [...list].sort((a, b) =>
-    sort === "budget" ? a.min - b.min : a.start.localeCompare(b.start),
+    sort === "budget"
+      ? a.min - b.min
+      : activeNearby()
+        ? (activeNearby().originDistances || activeNearby().distances).get(
+            a.id,
+          ) -
+            (activeNearby().originDistances || activeNearby().distances).get(
+              b.id,
+            ) || a.start.localeCompare(b.start)
+        : a.start.localeCompare(b.start),
   );
   $("#trip-grid").innerHTML = list.slice(0, visibleCount).map(card).join("");
   $("#empty").hidden = !!list.length;
@@ -360,9 +389,12 @@ function render() {
     `<strong>${list.length} ${list.length === 1 ? "trip" : "trips"}</strong> ${view === "saved" ? "saved for later" : view === "my-trips" ? "in your travel plans" : "with a story to share"}`;
   $("#load-more-wrap").hidden = view !== "discover" || !list.length;
   $("#load-more").hidden = list.length <= visibleCount;
-  const count = [maxBudget < 1000000, !!travelMode, womenFilter].filter(
-    Boolean,
-  ).length;
+  const count = [
+    maxBudget < 1000000,
+    !!travelMode,
+    !!selectedStyle,
+    womenFilter,
+  ].filter(Boolean).length;
   $("#filter-count").hidden = !count;
   $("#filter-count").textContent = count;
   $("#request-count").textContent = state.created.length + data.requests.length;
@@ -439,13 +471,13 @@ function create() {
     return;
   }
   openModal(
-    `<div class="modal-pad"><div class="eyebrow">YOU BRING THE PLAN</div><h2 id="modal-title">Make room for a new adventure.</h2><p>Give your crew a feel for the trip. You can keep the details flexible.</p><form id="create-form"><div class="form-grid"><label class="form-field full">Give your trip a name<input name="title" required maxlength="65" placeholder="A weekend in the mountains…" autofocus></label><label class="form-field">Starting from<input name="from" data-location required maxlength="60" placeholder="e.g. Delhi"></label><label class="form-field">Destination<input name="destination" data-location required maxlength="60" placeholder="e.g. Manali"></label><label class="form-field">Departure<input type="date" name="start" min="${today()}" required></label><label class="form-field">Return<input type="date" name="end" min="${today()}" required></label><label class="form-field">Minimum budget / person (₹)<input name="min" type="number" min="0" max="1000000" required placeholder="5000"></label><label class="form-field">Maximum budget / person (₹)<input name="max" type="number" min="0" max="1000000" required placeholder="8000"></label><label class="form-field">Already going (including you)<input name="going" type="number" min="1" max="19" value="1" required></label><label class="form-field">Open spots<input name="seats" type="number" min="1" max="19" value="2" required></label><label class="form-field">Travel style<select name="category"><option>Mountains</option><option>Beach</option><option>Adventure</option><option>Weekend</option></select></label><label class="form-field">Travel mode<select name="mode"><option>Bus</option><option>Train</option><option>Shared cab</option><option>Self-drive</option><option>Flight</option></select></label><label class="form-field full">Tell us about the plan<textarea name="description" required minlength="25" maxlength="1200" placeholder="The places, the pace, and the people you’d love to share it with."></textarea></label><label class="form-field full">A loose itinerary (optional)<textarea name="plan" maxlength="2000" placeholder="The places you’d like to visit, with room for a detour."></textarea></label><label class="form-field full">Group ground rules (optional)<textarea name="rules" maxlength="1200" placeholder="Public meeting points, shared expectations, and personal boundaries."></textarea></label><label class="form-field full">Who can request to join?<select name="group"><option value="mixed">All eligible travelers (18+)</option><option value="women">Women only</option></select></label></div><label class="check-label"><input type="checkbox" required name="adult"> I am 18 or older. I’ll use public meeting points and respect travelers’ privacy.</label><p id="create-error" class="form-error" role="alert"></p><p class="notice">Your plan will be shared with the community. You approve who joins. Do not include private contact details or collect payments in the listing.</p><div class="modal-actions"><button class="primary" type="submit">Create my trip ${icon("arrow-up-right")}</button></div></form></div>`,
+    `<div class="modal-pad"><div class="eyebrow">YOU BRING THE PLAN</div><h2 id="modal-title">Make room for a new adventure.</h2><p>Give your crew a feel for the trip. You can keep the details flexible.</p><form id="create-form"><div class="form-grid"><label class="form-field full">Give your trip a name<input name="title" required maxlength="65" placeholder="A weekend in the mountains…" autofocus></label><label class="form-field">Starting from<input name="from" data-location required maxlength="60" placeholder="e.g. Delhi"></label><label class="form-field">Destination<input name="destination" data-location required maxlength="60" placeholder="e.g. Manali"></label><label class="form-field">Departure<input type="date" name="start" min="${today()}" required></label><label class="form-field">Return<input type="date" name="end" min="${today()}" required></label><label class="form-field">Minimum budget / person (₹)<input name="min" type="number" min="0" max="1000000" required placeholder="5000"></label><label class="form-field">Maximum budget / person (₹)<input name="max" type="number" min="0" max="1000000" required placeholder="8000"></label><label class="form-field">Already going (including you)<input name="going" type="number" min="1" max="19" value="1" required></label><label class="form-field">Open spots<input name="seats" type="number" min="1" max="19" value="2" required></label><label class="form-field">Travel style<select name="category">${data.options.travelStyles.map((style) => `<option>${esc(style)}</option>`).join("")}</select></label><label class="form-field">Travel mode<select name="mode"><option>Bus</option><option>Train</option><option>Shared cab</option><option>Self-drive</option><option>Flight</option></select></label><label class="form-field full">Tell us about the plan<textarea name="description" required minlength="25" maxlength="1200" placeholder="The places, the pace, and the people you’d love to share it with."></textarea></label><label class="form-field full">A loose itinerary (optional)<textarea name="plan" maxlength="2000" placeholder="The places you’d like to visit, with room for a detour."></textarea></label><label class="form-field full">Group ground rules (optional)<textarea name="rules" maxlength="1200" placeholder="Public meeting points, shared expectations, and personal boundaries."></textarea></label><label class="form-field full">Who can request to join?<select name="group" required>${data.options.groups.map((g) => `<option value="${g.value}" ${g.value === "mixed" ? "selected" : ""}>${g.label}</option>`).join("")}</select></label></div><label class="check-label"><input type="checkbox" required name="adult"> I am 18 or older. I’ll use public meeting points and respect travelers’ privacy.</label><p id="create-error" class="form-error" role="alert"></p><p class="notice">Your plan will be shared with the community. You approve who joins. Do not include private contact details or collect payments in the listing.</p><div class="modal-actions"><button class="primary" type="submit">Create my trip ${icon("arrow-up-right")}</button></div></form></div>`,
   );
 }
 function profile() {
   if (!requireLogin({ type: "profile" })) return;
   openModal(
-    `<div class="modal-pad"><div class="eyebrow">THE PERSON BEHIND THE PLAN</div><h2 id="modal-title">Your traveler profile.</h2><div class="session-email">${icon("mail")}<div>${esc(auth.session?.email)}<small>Private account email</small></div></div><div class="profile-preview"><span class="avatar">${esc(state.profile.name.slice(0, 1))}</span><div><strong>${esc(state.profile.name)}</strong><p>Traveler profile</p></div></div><div class="modal-actions"><button class="secondary" data-directory>Find or block a traveler</button>${data.user?.googleLinked ? "<span>Google connected</span>" : googleEnabled ? '<a class="secondary" href="/api/auth/google/start?mode=link">Connect Google</a>' : "<small>Google sign-in is not configured yet.</small>"}</div><form id="profile-form"><div class="form-grid"><label class="form-field">First name<input name="firstName" required maxlength="50" autocomplete="given-name" value="${esc(state.profile.firstName)}" autofocus></label><label class="form-field">Last name<input name="lastName" required maxlength="50" autocomplete="family-name" value="${esc(state.profile.lastName)}"></label><label class="form-field">Home city (optional)<input name="city" data-location value="${esc(state.profile.city)}" maxlength="40" placeholder="City only, no exact address"></label><label class="form-field">Group eligibility<select name="gender"><option value="">Prefer not to say</option><option value="woman" ${state.profile.gender === "woman" ? "selected" : ""}>I identify as a woman</option><option value="other" ${state.profile.gender === "other" ? "selected" : ""}>Other / not eligible for women-only trips</option></select></label><label class="form-field full">Your travel style<textarea name="bio" maxlength="500" placeholder="A little about how you like to travel…">${esc(state.profile.bio)}</textarea></label></div><label class="check-label"><input type="checkbox" name="adult" required ${state.profile.age ? "checked" : ""}> I confirm I am 18 or older.</label><p class="notice">Your email is private. Your traveler name and introduction are visible to other members when you join a trip.</p><div class="modal-actions"><button class="primary" type="submit">Save profile ${icon("check")}</button><button class="secondary logout-button" type="button" data-action="logout">Log out</button></div></form></div>`,
+    `<div class="modal-pad"><div class="eyebrow">THE PERSON BEHIND THE PLAN</div><h2 id="modal-title">Your traveler profile.</h2><div class="session-email">${icon("mail")}<div>${esc(auth.session?.email)}<small>Private account email</small></div></div><div class="profile-preview"><span class="avatar">${esc(state.profile.name.slice(0, 1))}</span><div><strong>${esc(state.profile.name)}</strong><p>Traveler profile</p></div></div><div class="modal-actions"><button class="secondary" data-directory>Find or block a traveler</button>${data.user?.googleLinked ? "<span>Google connected</span>" : googleEnabled ? '<a class="secondary" href="/api/auth/google/start?mode=link">Connect Google</a>' : "<small>Google sign-in is not configured yet.</small>"}</div><form id="profile-form"><div class="form-grid"><label class="form-field">First name<input name="firstName" required maxlength="50" autocomplete="given-name" value="${esc(state.profile.firstName)}" autofocus></label><label class="form-field">Last name<input name="lastName" required maxlength="50" autocomplete="family-name" value="${esc(state.profile.lastName)}"></label><label class="form-field">Home city (optional)<input name="city" data-location value="${esc(state.profile.city)}" maxlength="40" placeholder="City only, no exact address"></label><label class="form-field">Gender<select name="gender"><option value="">Not specified</option>${data.options.genders.map((g) => `<option value="${g.value}" ${state.profile.gender === g.value ? "selected" : ""}>${g.label}</option>`).join("")}</select></label><label class="form-field">Self-description (optional)<input name="genderDescription" maxlength="100" value="${esc(state.profile.genderDescription || "")}" placeholder="Used only for Self-Describe"></label><label class="form-field full">Your travel style<textarea name="bio" maxlength="500" placeholder="A little about how you like to travel…">${esc(state.profile.bio)}</textarea></label></div><label class="check-label"><input type="checkbox" name="adult" required ${state.profile.age ? "checked" : ""}> I confirm I am 18 or older.</label><p class="notice">Your email is private. Your traveler name and introduction are visible to other members when you join a trip.</p><div class="modal-actions"><button class="primary" type="submit">Save profile ${icon("check")}</button><button class="secondary logout-button" type="button" data-action="logout">Log out</button></div></form></div>`,
   );
 }
 function safety() {
@@ -455,7 +487,7 @@ function safety() {
 }
 function filters() {
   openModal(
-    `<div class="modal-pad"><div class="eyebrow">A PLAN THAT FEELS LIKE YOU</div><h2 id="modal-title">Find your kind of trip.</h2><form id="filter-form"><div class="form-grid"><label class="form-field full">Maximum budget per person<select name="budget"><option value="1000000">Any budget</option><option value="5000">Up to ₹5,000</option><option value="10000">Up to ₹10,000</option><option value="15000">Up to ₹15,000</option></select></label><label class="form-field full">Travel mode<select name="mode"><option value="">Any travel mode</option><option value="bus">Bus</option><option value="train">Train</option><option value="cab">Cab</option><option value="self-drive">Self-drive</option><option value="flight">Flight</option></select></label></div><label class="check-label"><input type="checkbox" name="women" ${womenFilter ? "checked" : ""}> Show women-only trips</label><p class="notice">Budget filters use each trip’s minimum estimated cost. Final expenses are agreed between travelers.</p><div class="modal-actions"><button type="submit" class="primary">Show matching trips</button><button type="button" class="secondary" data-action="reset-filters">Reset filters</button></div></form></div>`,
+    `<div class="modal-pad"><div class="eyebrow">A PLAN THAT FEELS LIKE YOU</div><h2 id="modal-title">Find your kind of trip.</h2><form id="filter-form"><div class="form-grid"><label class="form-field full">Maximum budget per person<select name="budget"><option value="1000000">Any budget</option><option value="5000">Up to ₹5,000</option><option value="10000">Up to ₹10,000</option><option value="15000">Up to ₹15,000</option></select></label><label class="form-field full">Travel Style<select name="style"><option value="">Any travel style</option>${[...data.options.travelStyles, ...data.options.legacyStyles].map((style) => `<option ${selectedStyle === style ? "selected" : ""}>${esc(style)}</option>`).join("")}</select></label><label class="form-field full">Travel mode<select name="mode"><option value="">Any travel mode</option><option value="bus">Bus</option><option value="train">Train</option><option value="cab">Cab</option><option value="self-drive">Self-drive</option><option value="flight">Flight</option></select></label></div><label class="check-label"><input type="checkbox" name="women" ${womenFilter ? "checked" : ""}> Show women-only trips</label><p class="notice">Budget filters use each trip’s minimum estimated cost. Final expenses are agreed between travelers.</p><div class="modal-actions"><button type="submit" class="primary">Show matching trips</button><button type="button" class="secondary" data-action="reset-filters">Reset filters</button></div></form></div>`,
   );
   $("#filter-form [name=budget]").value = String(maxBudget);
   $("#filter-form [name=mode]").value = travelMode;
@@ -464,6 +496,7 @@ function reset() {
   category = "All trips";
   maxBudget = 1000000;
   travelMode = "";
+  selectedStyle = "";
   womenFilter = false;
   $("#search-form").reset();
   document
@@ -755,6 +788,7 @@ async function handleClick(event) {
     return;
   }
   if (b.dataset.destination) {
+    delete $("#destination").dataset.placeId;
     $("#destination").value = b.dataset.destination;
     $("#search-form").requestSubmit();
     return;
@@ -777,6 +811,7 @@ async function handleClick(event) {
     "reset-filters": () => {
       maxBudget = 1000000;
       travelMode = "";
+      selectedStyle = "";
       womenFilter = false;
       closeModal();
       render();
@@ -792,11 +827,81 @@ async function handleClick(event) {
 document.addEventListener("click", (event) => {
   handleClick(event).catch(errorMessage);
 });
-$("#search-form").addEventListener("submit", (event) => {
+$("#search-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const version = ++searchVersion,
+    query = $("#destination").value.trim(),
+    origin = $("#origin").value.trim(),
+    radius = +$("#search-radius").value;
+  nearbySearch = null;
+  $("#nearby-attribution").hidden = true;
+  $("#nearby-status").textContent =
+    radius && (query || origin) ? "Finding nearby trips…" : "";
+  const matchesCurrent = () =>
+    version === searchVersion &&
+    query === $("#destination").value.trim() &&
+    origin === $("#origin").value.trim() &&
+    radius === +$("#search-radius").value;
+  if (radius && (query || origin))
+    try {
+      const results = await Promise.all(
+        [
+          ["destination", query],
+          ["origin", origin],
+        ]
+          .filter(([, name]) => name)
+          .map(async ([field, name]) => {
+            const input = $(field === "origin" ? "#origin" : "#destination");
+            const params = new URLSearchParams({
+              q: name,
+              radius: String(radius),
+              field,
+            });
+            if (input.dataset.placeId)
+              params.set("placeId", input.dataset.placeId);
+            return [field, await api("/trips/nearby?" + params)];
+          }),
+      );
+      if (!matchesCurrent()) return;
+      nearbySearch = {
+        query: query.toLowerCase(),
+        origin: origin.toLowerCase(),
+        radius,
+      };
+      for (const [field, result] of results)
+        nearbySearch[field === "origin" ? "originDistances" : "distances"] =
+          new Map(result.results.map((r) => [r.id, r.distanceKm]));
+      $("#nearby-status").textContent =
+        results
+          .map(
+            ([field, r]) =>
+              `${field === "origin" ? "Starting points" : "Destinations"} within ${radius} km of ${r.center}.`,
+          )
+          .join(" ") +
+        " Straight-line distances, not road distances." +
+        (results.some(([, r]) => r.partial)
+          ? " Some cities could not be located; results may be incomplete."
+          : "");
+      $("#nearby-attribution").hidden = false;
+    } catch (error) {
+      if (!matchesCurrent()) return;
+      $("#nearby-status").textContent =
+        error.message + " Showing text matches only.";
+    }
+  visibleCount = 6;
   render();
   $(".explore").scrollIntoView({ behavior: "smooth", block: "start" });
 });
+$("#search-radius").addEventListener("change", () =>
+  $("#search-form").requestSubmit(),
+);
+for (const selector of ["#destination", "#origin"])
+  $(selector).addEventListener("input", () => {
+    searchVersion++;
+    nearbySearch = null;
+    $("#nearby-status").textContent = "";
+    $("#nearby-attribution").hidden = true;
+  });
 $("#sort").addEventListener("change", render);
 $("#load-more").addEventListener("click", () => {
   visibleCount += 6;
@@ -824,6 +929,7 @@ document.addEventListener("submit", async (event) => {
     if (form.id === "filter-form") {
       maxBudget = Number(d.budget);
       travelMode = d.mode;
+      selectedStyle = d.style;
       womenFilter = !!d.women;
       closeModal();
       render();
@@ -847,6 +953,7 @@ document.addEventListener("submit", async (event) => {
           lastName: d.lastName,
           city: d.city,
           gender: d.gender,
+          genderDescription: d.genderDescription,
           bio: d.bio,
           age: !!d.adult,
         },
@@ -862,6 +969,9 @@ document.addEventListener("submit", async (event) => {
           title: d.title,
           from: d.from,
           destination: d.destination,
+          ...(form.elements.destination.dataset.placeId
+            ? { destinationPlaceId: form.elements.destination.dataset.placeId }
+            : {}),
           start: d.start,
           end: d.end,
           min: +d.min,
@@ -874,6 +984,10 @@ document.addEventListener("submit", async (event) => {
           plan: d.plan,
           rules: d.rules,
           women: d.group === "women",
+          groupEligibility: d.group,
+          ...(form.elements.from.dataset.placeId
+            ? { fromPlaceId: form.elements.from.dataset.placeId }
+            : {}),
           age: !!d.adult,
         },
       });

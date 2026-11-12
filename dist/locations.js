@@ -42,6 +42,7 @@
           clearTimeout(timer);
           if (values[i] !== undefined) {
             input.value = values[i].value;
+            input.dataset.placeId = values[i].placeId || "";
             input.dispatchEvent(new Event("change", { bubbles: true }));
           }
           close();
@@ -108,6 +109,7 @@
           }
         };
         input.addEventListener("input", () => {
+          delete input.dataset.placeId;
           version++;
           clearTimeout(timer);
           close();
