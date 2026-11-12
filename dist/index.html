@@ -220,10 +220,26 @@
             ><a class="nav-link" href="#saved" data-view="saved">Saved</a>
           </nav>
           <div class="nav-actions">
+            <details class="account-menu" id="account-menu">
+              <summary>Organize <span aria-hidden="true">⌄</span></summary>
+              <div class="account-menu-panel">
+                <button data-community="dashboard">Organizer dashboard</button
+                ><button data-community="verification">
+                  Verification status</button
+                ><button id="community-admin" data-community="admin" hidden>
+                  Administration</button
+                ><button data-community="feedback">Write to Us</button>
+              </div>
+            </details>
             <button class="safety-nav" data-action="safety">
               <span data-icon="shield"></span> Safety first</button
-            ><button class="create-nav" data-action="create">
-              <span data-icon="plus"></span> Create a trip</button
+            ><button
+              class="create-nav"
+              data-action="create"
+              aria-label="Create a trip"
+            >
+              <span data-icon="plus"></span
+              ><span class="create-label">Create a trip</span></button
             ><button class="login-nav" data-action="login">
               Log in <span data-icon="arrow-right"></span></button
             ><button
@@ -410,12 +426,73 @@
                 ☕ Weekend plans
               </button>
             </div>
-            <button class="filter-button" data-action="filters">
+            <button
+              class="filter-button"
+              id="toggle-body-filters"
+              aria-controls="body-filters"
+              aria-expanded="true"
+            >
               <span data-icon="sliders"></span> Filters
               <span id="filter-count" hidden></span>
             </button>
           </div>
+          <details class="body-filters" id="body-filters" open>
+            <summary>
+              Refine your trip <span>Budget, travel style and transport</span>
+            </summary>
+            <form id="body-filter-form" class="body-filter-form">
+              <label
+                >Travel style<select name="style" id="body-style">
+                  <option value="">Any travel style</option>
+                </select></label
+              ><label
+                >Budget per person<select name="budget" id="body-budget">
+                  <option value="1000000">Any budget</option>
+                  <option value="5000">Up to ₹5,000</option>
+                  <option value="10000">Up to ₹10,000</option>
+                  <option value="15000">Up to ₹15,000</option>
+                </select></label
+              ><label
+                >Travel mode<select name="mode" id="body-mode">
+                  <option value="">Any travel mode</option>
+                  <option value="bus">Bus</option>
+                  <option value="train">Train</option>
+                  <option value="cab">Shared cab</option>
+                  <option value="self-drive">Self-drive</option>
+                  <option value="flight">Flight</option>
+                </select></label
+              ><label class="filter-check"
+                ><input
+                  name="women"
+                  id="body-women"
+                  type="checkbox"
+                />Women-only trips</label
+              >
+              <div class="body-filter-actions">
+                <button class="primary" type="submit">Apply filters</button
+                ><button
+                  class="secondary"
+                  type="button"
+                  id="clear-body-filters"
+                >
+                  Clear filters
+                </button>
+              </div>
+            </form>
+            <p class="filter-help">
+              Budget filters use each trip’s starting estimate per person.
+            </p>
+          </details>
           <div class="results-meta">
+            <label id="my-trip-status-label" hidden
+              >Trip status<select id="my-trip-status">
+                <option value="all">All plans</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="ongoing">In progress</option>
+                <option value="completed">Completed</option>
+                <option value="canceled">Canceled</option>
+              </select></label
+            >
             <p id="results-count" aria-live="polite"></p>
             <label
               >Sort by
@@ -496,20 +573,56 @@
             data-icon="arrow-up-right"
           ></span>
         </section>
-      </main>
-      <footer class="container">
-        <a class="brand" href="#discover"
-          ><span class="brand-icon" data-icon="mountain"></span>tripling<span
-            class="brand-dot"
-            >.</span
-          ></a
+        <section
+          id="community-stories"
+          class="container community-section"
+          aria-labelledby="stories-title"
         >
-        <p>Find your trip. Find your people. Travel together.</p>
-        <button data-action="safety">
-          Community & safety <span data-icon="arrow-up-right"></span></button
-        ><a class="footer-legal" href="/terms">Terms</a
-        ><a class="footer-legal" href="/privacy">Privacy</a
-        ><span class="footer-note">Made for the journey.</span>
+          <div class="stories-heading">
+            <div>
+              <div class="eyebrow">FROM THE COMMUNITY</div>
+              <h2 id="stories-title">Good company. Shared stories.</h2>
+              <p>Experiences from travelers who have been part of a trip.</p>
+            </div>
+            <button class="secondary" data-community="testimonial">
+              Share your experience <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <div id="testimonials-list" class="testimonials-list"></div>
+        </section>
+      </main>
+      <footer class="site-footer">
+        <div class="container footer-grid">
+          <div class="footer-about">
+            <a class="brand" href="#discover" aria-label="Tripling home"
+              ><span class="brand-icon" data-icon="mountain"></span
+              >tripling<span class="brand-dot">.</span></a
+            >
+            <p>Find your trip. Find your people.<br />Travel together.</p>
+          </div>
+          <nav aria-label="Explore Tripling">
+            <h3>Explore</h3>
+            <a href="#discover">Discover trips</a
+            ><a href="#past-trips">Past journeys</a
+            ><button data-community="testimonial">Share your experience</button>
+          </nav>
+          <nav aria-label="Help and community">
+            <h3>Community</h3>
+            <button data-action="safety">Community & safety</button
+            ><button data-community="feedback">Write to Us</button
+            ><button data-community="verification">Become an organizer</button>
+          </nav>
+          <nav aria-label="Legal information">
+            <h3>Good to know</h3>
+            <a href="/terms">Terms & conditions</a
+            ><a href="/privacy">Privacy policy</a
+            ><a href="mailto:abhishek@tripling.in">abhishek@tripling.in</a>
+          </nav>
+        </div>
+        <div class="container footer-bottom">
+          <span>© <span id="footer-year">2026</span> Tripling</span
+          ><span>Made for the journey.</span>
+        </div>
       </footer>
     </div>
     <dialog id="modal" aria-labelledby="modal-title">
@@ -522,28 +635,6 @@
       <div id="modal-content"></div>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
-    <section class="container community-section">
-      <h2>Travel together, with confidence.</h2>
-      <div class="modal-actions">
-        <button class="secondary" data-community="dashboard">
-          Organizer dashboard</button
-        ><button class="secondary" data-community="verification">
-          Organizer verification</button
-        ><button class="secondary" data-community="feedback">Write to Us</button
-        ><button class="secondary" data-community="testimonial">
-          Share your experience</button
-        ><button
-          id="community-admin"
-          hidden
-          class="secondary"
-          data-community="admin"
-        >
-          Administration
-        </button>
-      </div>
-      <h2>Traveler experiences</h2>
-      <div id="testimonials-list"></div>
-    </section>
     <script src="auth.js"></script>
     <script src="locations.js"></script>
     <script src="community.js"></script>

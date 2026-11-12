@@ -97,6 +97,10 @@ const activeNearby = () =>
     ? nearbySearch
     : null;
 
+const hasNearbyQuery = () =>
+  view === "discover" &&
+  +$("#search-radius").value > 0 &&
+  !!($("#destination").value.trim() || $("#origin").value.trim());
 let modalVersion = 0,
   chatTimer = null,
   toastTimer = null;
@@ -285,6 +289,13 @@ function setView(next) {
   document.body.classList.remove("auth-screen");
   document.title = "Tripling — Find your people. Go places.";
   $("#discovery-intro").hidden = view !== "discover";
+  $("#community-stories").hidden = view !== "discover";
+  document
+    .querySelectorAll(".why,.create-banner")
+    .forEach((section) => (section.hidden = view !== "discover"));
+  $(".filter-row").hidden = view !== "discover";
+  $("#body-filters").hidden = view !== "discover";
+  $("#my-trip-status-label").hidden = view !== "my-trips";
   $(".filter-row").hidden = view !== "discover";
   $(".why").hidden = view !== "discover";
   $(".create-banner").hidden = view !== "discover";
@@ -326,7 +337,7 @@ function card(t) {
     owned = t.organizerId === data.user?.id,
     request = state.requests[t.id],
     incoming = data.incoming.filter((r) => r.trip_id === t.id).length;
-  return `<article class="trip-card"><div class="card-image"><img src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} travel inspiration" loading="lazy"><span class="match-badge">${icon(t.women ? "shield" : "compass")} ${t.lifecycle === "completed" ? `Completed · ${t.reviewCount} reviews` : !t.organizerId ? "Inactive plan" : t.status === "canceled" ? "Canceled" : t.women ? "Women-only crew" : t.seats ? "Open to join" : "Crew complete"}</span><button class="save-button ${saved ? "saved" : ""}" data-save="${esc(t.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(t.title)}" aria-pressed="${saved}">${icon("bookmark")}</button><span class="image-label">${icon("pin")} ${esc(t.destination)}</span></div><div class="card-content"><div class="card-tags">${t.tags.map((tag) => `<span class="tag ${tag === "Women only" ? "women" : ""}">${esc(tag)}</span>`).join("")}</div><button class="card-title" data-trip="${esc(t.id)}">${esc(t.title)}</button>${t.verifiedOrganizer ? '<p class="verified-organizer">✓ Verified Organizer</p>' : ""}${t.organizerRating ? `<p class="nearby-distance">Organizer ${t.organizerRating.toFixed(1)}/5 · ${t.organizerReviewCount} reviews</p>` : ""}<button class="report-link" data-community="profile" data-id="${esc(t.organizerId || t.ownerId)}">Organizer profile & ratings</button><p class="card-route">${esc(t.from)} → ${esc(t.destination)}</p>${t.departureUtc ? `<p class="nearby-distance">Departs ${esc(new Date(t.departureUtc).toLocaleString())} (${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)})</p>` : '<p class="nearby-distance">Departure time needs confirmation.</p>'}${activeNearby()?.distances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().distances.get(t.id)} km from your searched city · straight-line</p>` : ""}${activeNearby()?.originDistances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().originDistances.get(t.id)} km from searched starting point · straight-line</p>` : ""}<div class="card-info"><span>${icon("calendar")} ${range(t)}</span><span>${icon("clock")} ${duration(t)} days</span></div><div class="card-cost"><strong>${money(t.min)}–${money(t.max).slice(1)}</strong><span>/ person</span><span>${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div class="card-footer"><span class="avatar host-avatar">${esc(t.initials)}</span><div class="host-name">Planned by <strong>${esc(owned ? "you" : t.host)}</strong><span>${t.isMember ? "Your travel crew" : "Community traveler"}</span></div><button class="card-cta" data-trip="${esc(t.id)}">View trip ${icon("arrow-up-right")}</button></div>${view === "my-trips" ? `<div class="my-card-status"><span class="request-status">${t.status === "canceled" ? "Canceled" : owned ? "Organizer" : t.isMember ? "Joined" : request?.status === "pending" ? "Awaiting approval" : "Left trip"}</span>${owned && t.end >= today() ? `<button data-incoming="${esc(t.id)}">Requests (${incoming})</button>` : ""}${t.isMember ? `<button data-leave="${esc(t.id)}" ${t.cancellationAllowed !== true ? 'disabled title="Contact support: participation cannot be canceled within 24 hours or without a departure time."' : ""}>Leave trip</button>${t.cancellationAllowed !== true ? "<small>Cancellation is not allowed within 24 hours of the scheduled trip departure. Please contact support for exceptional requests. Legacy trips without a departure time also require support.</small>" : ""}` : request ? `<button data-leave="${esc(t.id)}">${request.status === "accepted" ? "Leave trip" : "Cancel request"}</button>` : ""}</div>${t.isMember ? `<button class="card-chat" data-chat="${esc(t.id)}">${icon("users")} Open group chat ${icon("arrow-right")}</button>` : ""}` : ""}</div></article>`;
+  return `<article class="trip-card"><div class="card-image"><img src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} travel inspiration" loading="lazy"><span class="match-badge">${icon(t.women ? "shield" : "compass")} ${t.lifecycle === "completed" ? `Completed · ${t.reviewCount} reviews` : !t.organizerId ? "Inactive plan" : t.status === "canceled" ? "Canceled" : t.women ? "Women-only crew" : t.seats ? "Open to join" : "Crew complete"}</span><button class="save-button ${saved ? "saved" : ""}" data-save="${esc(t.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(t.title)}" aria-pressed="${saved}">${icon("bookmark")}</button><span class="image-label">${icon("pin")} ${esc(t.destination)}</span></div><div class="card-content"><div class="card-tags">${t.tags.map((tag) => `<span class="tag ${tag === "Women only" ? "women" : ""}">${esc(tag)}</span>`).join("")}</div><button class="card-title" data-trip="${esc(t.id)}">${esc(t.title)}</button>${t.verifiedOrganizer ? '<p class="verified-organizer">✓ Verified Organizer</p>' : ""}${t.organizerRating ? `<p class="nearby-distance">Organizer ${t.organizerRating.toFixed(1)}/5 · ${t.organizerReviewCount} reviews</p>` : ""}<button class="report-link" data-community="profile" data-id="${esc(t.organizerId || t.ownerId)}">Organizer profile & ratings</button><p class="card-route">${esc(t.from)} → ${esc(t.destination)}</p>${t.departureUtc ? `<p class="nearby-distance">Departs ${esc(new Date(t.departureUtc).toLocaleString())} (${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)})</p>` : '<p class="nearby-distance">Departure time needs confirmation.</p>'}${activeNearby()?.distances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().distances.get(t.id)} km from your searched city · straight-line</p>` : ""}${activeNearby()?.originDistances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().originDistances.get(t.id)} km from searched starting point · straight-line</p>` : ""}<div class="card-info"><span>${icon("calendar")} ${range(t)}</span><span>${icon("clock")} ${duration(t)} days</span></div><div class="card-cost"><strong>${money(t.min)}–${money(t.max).slice(1)}</strong><span>/ person</span><span>${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div class="card-footer"><span class="avatar host-avatar">${esc(t.initials)}</span><div class="host-name">Planned by <strong>${esc(owned ? "you" : t.host)}</strong><span>${t.isMember ? "Your travel crew" : "Community traveler"}</span></div><button class="card-cta" data-trip="${esc(t.id)}">View trip ${icon("arrow-up-right")}</button></div>${view === "my-trips" ? `<div class="my-card-status"><span class="request-status">${t.status === "canceled" ? "Canceled" : owned ? "Organizer" : t.isMember ? "Joined" : request?.status === "pending" ? "Awaiting approval" : "Left trip"}</span>${owned && t.end >= today() ? `<button data-incoming="${esc(t.id)}">Requests (${incoming})</button>` : ""}${t.isMember ? `<button class="leave-trip" data-leave="${esc(t.id)}" ${t.cancellationAllowed !== true ? 'disabled aria-describedby="leave-note-' + esc(t.id) + '"' : ""}>Leave trip</button>` : request ? `<button data-leave="${esc(t.id)}">${request.status === "accepted" ? "Leave trip" : "Cancel request"}</button>` : ""}</div>${t.isMember && t.cancellationAllowed !== true ? `<p class="participation-notice" id="leave-note-${esc(t.id)}">${t.departureUtc ? "Cancellation is not allowed within 24 hours of the scheduled trip departure." : "This trip’s departure time needs confirmation."} <a href="mailto:abhishek@tripling.in">Please contact support for exceptional requests.</a></p>` : ""}${t.isMember ? `<button class="card-chat" data-chat="${esc(t.id)}">${icon("users")} Open group chat ${icon("arrow-right")}</button>` : ""}` : ""}</div></article>`;
 }
 function render() {
   let list = trips();
@@ -368,6 +379,8 @@ function render() {
         (!womenFilter || t.women),
     );
   }
+  if (view === "my-trips" && $("#my-trip-status").value !== "all")
+    list = list.filter((t) => t.lifecycle === $("#my-trip-status").value);
   const sort = $("#sort").value;
   list = [...list].sort((a, b) =>
     sort === "budget"
@@ -408,6 +421,19 @@ function render() {
   ].filter(Boolean).length;
   $("#filter-count").hidden = !count;
   $("#filter-count").textContent = count;
+  if (!$("#body-style").dataset.ready && data.options) {
+    $("#body-style").innerHTML =
+      '<option value="">Any travel style</option>' +
+      [...data.options.travelStyles, ...data.options.legacyStyles]
+        .map((style) => `<option>${esc(style)}</option>`)
+        .join("");
+    $("#body-style").dataset.ready = "true";
+  }
+  $("#body-style").value = selectedStyle;
+  $("#body-budget").value = String(maxBudget);
+  $("#body-mode").value = travelMode;
+  $("#body-women").checked = womenFilter;
+
   $("#request-count").textContent = state.created.length + data.requests.length;
   $("#request-count").hidden = !(state.created.length + data.requests.length);
   $(".profile-button").hidden = !data.user;
@@ -799,7 +825,7 @@ async function handleClick(event) {
     document
       .querySelectorAll("[data-category]")
       .forEach((el) => el.classList.toggle("selected", el === b));
-    if (activeNearby()) $("#search-form").requestSubmit();
+    if (hasNearbyQuery()) $("#search-form").requestSubmit();
     else render();
     return;
   }
@@ -953,7 +979,7 @@ for (const selector of ["#destination", "#origin"])
     $("#nearby-attribution").hidden = true;
   });
 $("#sort").addEventListener("change", () => {
-  if (activeNearby()) $("#search-form").requestSubmit();
+  if (hasNearbyQuery()) $("#search-form").requestSubmit();
   else render();
 });
 $("#load-more").addEventListener("click", () => {
@@ -990,7 +1016,7 @@ document.addEventListener("submit", async (event) => {
       selectedStyle = d.style;
       womenFilter = !!d.women;
       closeModal();
-      if (activeNearby()) $("#search-form").requestSubmit();
+      if (hasNearbyQuery()) $("#search-form").requestSubmit();
       else render();
       return;
     }
@@ -1304,3 +1330,63 @@ async function boot() {
   }
 }
 boot();
+
+$("#body-filter-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const values = new FormData(event.currentTarget);
+  selectedStyle = values.get("style");
+  maxBudget = Number(values.get("budget"));
+  travelMode = values.get("mode");
+  womenFilter = values.has("women");
+  category = "All trips";
+  document
+    .querySelectorAll("[data-category]")
+    .forEach((b) =>
+      b.classList.toggle("selected", b.dataset.category === category),
+    );
+  visibleCount = 6;
+  if (hasNearbyQuery()) $("#search-form").requestSubmit();
+  else render();
+});
+$("#clear-body-filters").addEventListener("click", () => {
+  selectedStyle = "";
+  maxBudget = 1000000;
+  travelMode = "";
+  womenFilter = false;
+  category = "All trips";
+  document
+    .querySelectorAll("[data-category]")
+    .forEach((b) =>
+      b.classList.toggle("selected", b.dataset.category === category),
+    );
+  visibleCount = 6;
+  if (hasNearbyQuery()) $("#search-form").requestSubmit();
+  else render();
+});
+$("#toggle-body-filters").addEventListener("click", () => {
+  $("#body-filters").open = !$("#body-filters").open;
+});
+$("#body-filters").addEventListener("toggle", () =>
+  $("#toggle-body-filters").setAttribute(
+    "aria-expanded",
+    String($("#body-filters").open),
+  ),
+);
+$("#footer-year").textContent = new Date().getFullYear();
+if (matchMedia("(max-width: 680px)").matches) $("#body-filters").open = false;
+document.addEventListener("click", (event) => {
+  const menu = $("#account-menu");
+  if (!menu.contains(event.target) || event.target.closest("[data-community]"))
+    menu.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && $("#account-menu").open) {
+    $("#account-menu").open = false;
+    $("#account-menu summary").focus();
+  }
+});
+
+$("#my-trip-status").addEventListener("change", () => {
+  visibleCount = 6;
+  render();
+});

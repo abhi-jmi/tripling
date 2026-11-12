@@ -18,7 +18,7 @@
   const hidden = (name, value) =>
     `<input type="hidden" name="${name}" value="${esc(value)}">`;
   const message = (name, label, value = "", min = 10) =>
-    `<label class="form-field">${label}<textarea name="${name}" minlength="${min}" maxlength="4000" ${min>0?"required":""}>${esc(value)}</textarea></label>`;
+    `<label class="form-field">${label}<textarea name="${name}" minlength="${min}" maxlength="4000" ${min > 0 ? "required" : ""}>${esc(value)}</textarea></label>`;
   const categories = [
     "General Feedback",
     "Suggestion",
@@ -166,7 +166,7 @@
             `<article class="request-item"><p>${esc(t.message)}</p><strong>${esc(t.name)}</strong><small> · ${esc(t.trip_title)}</small></article>`,
         )
         .join("") ||
-      "<p>No published traveler stories yet. Experiences appear only with consent and approval.</p>";
+      `<div class="stories-empty"><span aria-hidden="true">✳</span><div><strong>Your next trip could be a story worth sharing.</strong><p>Traveler stories will appear here after consent and review.</p></div></div>`;
     document.getElementById("community-admin").hidden = !c.data().user?.isAdmin;
   }
   window.TriplingCommunity = {
