@@ -126,3 +126,19 @@ must be completed and regression-tested before treating this as the full release
 - No production container rebuild or live Google/AWS call was performed. Google
   HTTP responses were mocked in automated tests; runtime database tests used
   actual local databases. No production deployment was performed.
+
+## Important files changed
+
+- `server/trip-options.js`: shared travel styles, gender/group metadata and
+  eligibility rules; `server/trips.js`: compatibility validation and enforcement.
+- `server/nearby.js`: city resolution, expiring coordinate cache, Haversine
+  matching, geographic validation and bounded nearby API; `server/places.js`:
+  selected city Place IDs.
+- `server/app.js`, `server/auth.js`: expanded private profile fields and routes;
+  `server/migrate.js`: coordinate-cache collection/indexes.
+- `dist/app.js`, `dist/index.html`, `dist/locations.js`, `dist/styles.css`:
+  profile/trip/filter controls, radius interactions, distance cards and layouts.
+- `server/test/nearby.test.js`, `server/test/integration.test.js`,
+  `scripts/check-browser.mjs`: boundary, privacy/eligibility and regression tests.
+- `server/legal/privacy.json`, `docs/google-places.md`: coordinate retention and
+  provider configuration disclosures.
