@@ -57,6 +57,30 @@ if (process.env.GOOGLE_PLACES_SECRET_ARN) {
     client.destroy();
   }
 }
+if (process.env.VERIFICATION_KEY_SECRET_ARN) {
+  const { SecretsManagerClient, GetSecretValueCommand } =
+    await import("@aws-sdk/client-secrets-manager");
+  const client = new SecretsManagerClient({});
+  try {
+    const value = await client.send(
+      new GetSecretValueCommand({
+        SecretId: process.env.VERIFICATION_KEY_SECRET_ARN,
+      }),
+    );
+    let config;
+    try {
+      config = JSON.parse(value.SecretString || "{}");
+    } catch {
+      throw new Error("Verification key secret must be valid JSON.");
+    }
+    const key = config.key;
+    if (typeof key !== "string" || Buffer.from(key, "base64").length !== 32)
+      throw new Error("Verification key secret requires a 32-byte base64 key.");
+    process.env.VERIFICATION_DOCUMENT_KEY = key;
+  } finally {
+    client.destroy();
+  }
+}
 legalConfiguration();
 const pool = await createDatabase();
 await migrate(pool);

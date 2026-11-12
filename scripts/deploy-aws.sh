@@ -43,6 +43,8 @@ if ! aws ecr describe-images --region "$region" --repository-name "$repository_n
   docker push "$repository:$image_tag"
 fi
 service_options=()
+if [[ -n ${TRIPLING_ADMIN_USER_IDS+x} ]]; then service_options+=("AdminUserIds=$TRIPLING_ADMIN_USER_IDS"); fi
+if [[ -n ${TRIPLING_VERIFICATION_KEY_SECRET_ARN+x} ]]; then service_options+=("VerificationKeySecretArn=$TRIPLING_VERIFICATION_KEY_SECRET_ARN"); fi
 if [[ "$foundation_template" == infra/foundation.yaml ]]; then
   legacy_secret=$(aws cloudformation describe-stacks --stack-name "$foundation" --region "$region" --query "Stacks[0].Outputs[?OutputKey=='DatabaseSecretArn'].OutputValue | [0]" --output text --no-cli-pager)
   [[ "$legacy_secret" == arn:*:secretsmanager:* ]] || { echo 'Legacy rollback secret could not be resolved.' >&2; exit 1; }

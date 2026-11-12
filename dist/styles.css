@@ -2899,4 +2899,37 @@ body.auth-screen {
   font-size: 12px;
   margin: 4px 0 12px;
 }
-.search-bar .from-field { display: flex; }
+.search-bar .from-field {
+  display: flex;
+}
+.community-section {
+  padding-top: 30px;
+  padding-bottom: 40px;
+}
+.community-form {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 28px;
+}
+.community-error {
+  color: #a52c27;
+}
+.community-stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 20px 0;
+}
+.community-stats strong {
+  display: block;
+  font-size: 25px;
+}
+.feedback-trap {
+  position: absolute;
+  left: -10000px;
+}
+.verified-organizer {
+  color: #2d5649;
+  font-size: 12px;
+  font-weight: 700;
+}

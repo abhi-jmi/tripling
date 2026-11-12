@@ -37,7 +37,8 @@ export function createCityResolver({
       {
         headers: {
           "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": "location,formattedAddress,types,id",
+          "X-Goog-FieldMask":
+            "location,formattedAddress,addressComponents,types,id",
         },
         signal: AbortSignal.timeout(4000),
       },
@@ -53,6 +54,13 @@ export function createCityResolver({
     return {
       ...coordinates.parse(place.location),
       label: String(place.formattedAddress || name),
+      city:
+        place.addressComponents?.find((c) => c.types?.includes("locality"))
+          ?.longText || name,
+      state:
+        place.addressComponents?.find((c) =>
+          c.types?.includes("administrative_area_level_1"),
+        )?.longText || "",
       placeId: place.id || placeId,
     };
   };
@@ -102,6 +110,19 @@ export function registerNearbyRoutes(app, pool, { throttle, cityResolver }) {
     const query = z
       .object({
         q: z.string().trim().max(60).default(""),
+        sort: z.enum(["nearest", "budget", "date"]).default("nearest"),
+        otherq: z.string().trim().min(2).max(60).optional(),
+        otherPlaceId: z
+          .string()
+          .regex(/^[a-zA-Z0-9_-]{1,250}$/)
+          .optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(100),
+        offset: z.coerce.number().int().min(0).max(100000).default(0),
+        when: z.iso.date().optional(),
+        style: z.string().trim().max(60).optional(),
+        budget: z.coerce.number().min(0).max(1000000).optional(),
+        mode: z.string().max(40).optional(),
+        women: z.enum(["true", "false"]).optional(),
         radius: z.coerce
           .number()
           .pipe(z.union([z.literal(25), z.literal(50), z.literal(100)]))
@@ -121,13 +142,11 @@ export function registerNearbyRoutes(app, pool, { throttle, cityResolver }) {
         "Provide a city or valid latitude and longitude together.",
       )
       .parse(req.query);
-    if (!cityResolver)
-      return res
-        .status(503)
-        .json({
-          error:
-            "Nearby search needs Google Places. Exact city search is still available.",
-        });
+    if (!cityResolver && query.lat === undefined)
+      return res.status(503).json({
+        error:
+          "Nearby search needs Google Places. Exact city search is still available.",
+      });
     await throttle(req, `nearby:${req.ip}`, 60);
     let center;
     try {
@@ -141,12 +160,154 @@ export function registerNearbyRoutes(app, pool, { throttle, cityResolver }) {
           : await locate(req, query.q, query.placeId);
     } catch (error) {
       if (error.status === 429) throw error;
-      return res
-        .status(503)
-        .json({
-          error:
-            "Could not locate this city. Choose a city suggestion or use exact city search.",
-        });
+      return res.status(503).json({
+        error:
+          "Could not locate this city. Choose a city suggestion or use exact city search.",
+      });
+    }
+    if (pool.database) {
+      let otherCenter;
+      if (query.otherq) {
+        try {
+          otherCenter = await locate(req, query.otherq, query.otherPlaceId);
+        } catch {
+          return res.status(503).json({
+            error:
+              "Could not locate the second city. Choose a city suggestion.",
+          });
+        }
+      }
+      const hidden = req.user
+        ? await pool.all("hidden_trips", { user_id: req.user.id })
+        : [];
+      const match = {
+        "trip.status": "open",
+        "trip.ends_on": { $gte: travelDate() },
+        "trip.id": { $nin: hidden.map((h) => h.trip_id) },
+      };
+      if (query.when) {
+        match["trip.starts_on"] = { $lte: query.when };
+        match["trip.ends_on"] = { $gte: query.when };
+      }
+      if (query.style) match["trip.category"] = query.style;
+      if (query.budget !== undefined)
+        match["trip.budget_min"] = { $lte: query.budget };
+      if (query.mode)
+        match["trip.mode"] = {
+          $regex: query.mode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          $options: "i",
+        };
+      if (query.women === "true") match["trip.women_only"] = true;
+      const stages = [
+        {
+          $geoNear: {
+            near: {
+              type: "Point",
+              coordinates: [center.longitude, center.latitude],
+            },
+            key: query.field,
+            distanceField: "distanceMeters",
+            spherical: true,
+            maxDistance: query.radius * 1000,
+            query: { expires_at: { $gt: new Date() } },
+          },
+        },
+        ...(otherCenter
+          ? [
+              {
+                $match: {
+                  [query.field === "origin" ? "destination" : "origin"]: {
+                    $geoWithin: {
+                      $centerSphere: [
+                        [otherCenter.longitude, otherCenter.latitude],
+                        query.radius / 6371.0088,
+                      ],
+                    },
+                  },
+                },
+              },
+            ]
+          : []),
+        {
+          $lookup: {
+            from: "trips",
+            localField: "trip_id",
+            foreignField: "id",
+            as: "trip",
+          },
+        },
+        { $unwind: "$trip" },
+        { $match: match },
+        {
+          $sort:
+            query.sort === "budget"
+              ? { "trip.budget_min": 1, distanceMeters: 1, trip_id: 1 }
+              : query.sort === "date"
+                ? { "trip.starts_on": 1, distanceMeters: 1, trip_id: 1 }
+                : { distanceMeters: 1, trip_id: 1 },
+        },
+        {
+          $facet: {
+            rows: [
+              { $skip: query.offset },
+              { $limit: query.limit },
+              {
+                $project: {
+                  _id: 0,
+                  id: "$trip_id",
+                  otherPoint:
+                    query.field === "origin" ? "$destination" : "$origin",
+                  distanceKm: {
+                    $round: [{ $divide: ["$distanceMeters", 1000] }, 1],
+                  },
+                },
+              },
+            ],
+            count: [{ $count: "total" }],
+          },
+        },
+      ];
+      const [result] = await pool.database
+        .collection("trip_locations")
+        .aggregate(stages)
+        .toArray();
+      const total = result?.count[0]?.total || 0;
+      return res.json({
+        field: query.field,
+        center: center.label,
+        radiusKm: query.radius,
+        results: (result?.rows || []).map(({ otherPoint, ...row }) => ({
+          ...row,
+          ...(otherCenter && otherPoint
+            ? {
+                [query.field === "origin"
+                  ? "destinationDistanceKm"
+                  : "originDistanceKm"]:
+                  Math.round(
+                    distanceKm(otherCenter, {
+                      longitude: otherPoint.coordinates[0],
+                      latitude: otherPoint.coordinates[1],
+                    }) * 10,
+                  ) / 10,
+              }
+            : {}),
+          [query.field === "origin"
+            ? "originDistanceKm"
+            : "destinationDistanceKm"]: row.distanceKm,
+        })),
+        total,
+        offset: query.offset,
+        nextOffset:
+          query.offset + (result?.rows.length || 0) < total
+            ? query.offset + (result?.rows.length || 0)
+            : null,
+        partial: false,
+        indexed: true,
+        attribution: "Google Maps",
+        distanceType: "straight-line",
+        notice:
+          "Only trips with confirmed, unexpired city coordinates are included.",
+      });
     }
     const [trips, hidden] = await Promise.all([
       pool.all(

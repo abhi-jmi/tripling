@@ -1,5 +1,7 @@
 # Tripling upgrade: Phase 1 and location-search increment
 
+**Historical increment:** the follow-up implementation is documented in [Organizer and community release](organizer-community.md). The pending-feature table below records the earlier phase, not the current follow-up state.
+
 ## Repository analysis and implementation plan
 
 Tripling has a plain JavaScript/HTML/CSS frontend in `dist/`, an Express backend

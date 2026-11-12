@@ -522,8 +522,31 @@
       <div id="modal-content"></div>
     </dialog>
     <div id="toast" role="status" aria-live="polite"></div>
+    <section class="container community-section">
+      <h2>Travel together, with confidence.</h2>
+      <div class="modal-actions">
+        <button class="secondary" data-community="dashboard">
+          Organizer dashboard</button
+        ><button class="secondary" data-community="verification">
+          Organizer verification</button
+        ><button class="secondary" data-community="feedback">Write to Us</button
+        ><button class="secondary" data-community="testimonial">
+          Share your experience</button
+        ><button
+          id="community-admin"
+          hidden
+          class="secondary"
+          data-community="admin"
+        >
+          Administration
+        </button>
+      </div>
+      <h2>Traveler experiences</h2>
+      <div id="testimonials-list"></div>
+    </section>
     <script src="auth.js"></script>
     <script src="locations.js"></script>
+    <script src="community.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

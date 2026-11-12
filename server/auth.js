@@ -4,6 +4,7 @@ import {
   timingSafeEqual,
   createHash,
 } from "node:crypto";
+import { isAdmin } from "./roles.js";
 import { promisify } from "node:util";
 const scrypt = promisify(scryptCallback);
 const options = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
@@ -89,6 +90,8 @@ export function publicUser(row) {
     googleLinked: !!row.google_linked,
     city: row.city,
     gender: row.gender,
+    isAdmin: isAdmin(row),
+    organizerVerification: row.organizer_verification || "not_submitted",
     genderDescription: row.gender_description || "",
     bio: row.bio,
     age: row.adult_confirmed,
