@@ -18,7 +18,7 @@ try {
   await guest.goto(origin);
   await guest.locator("#app-shell:not([hidden])").waitFor();
   assert(await guest.locator("#community-admin").isHidden());
-  await guest.locator("[data-community=feedback]").click();
+  await guest.locator(".site-footer [data-community=feedback]").click();
   const feedback = guest.locator("[data-community-form=feedback]");
   await feedback.locator("[name=name]").fill("Browser Feedback");
   await feedback.locator("[name=email]").fill("browser-feedback@example.test");
@@ -49,7 +49,7 @@ try {
   await owner.locator("#signup-legal").check();
   await owner.locator("#auth-submit").click();
   await owner.locator("#app-shell:not([hidden])").waitFor();
-  await owner.locator("[data-community=verification]").click();
+  await owner.locator(".site-footer [data-community=verification]").click();
   const verification = owner.locator("[data-community-form=verification]");
   await verification.locator("[name=name]").fill("Browser Travel Organizer");
   await verification
@@ -73,6 +73,7 @@ try {
   await admin.locator("#login-password").fill("Browser admin test password!");
   await admin.locator("#auth-submit").click();
   await admin.locator("#app-shell:not([hidden])").waitFor();
+  await admin.locator("#account-menu summary").click();
   await admin.locator("#community-admin").click();
   const decision = admin.locator("[data-community-form=decision]").first();
   await decision
@@ -104,6 +105,7 @@ try {
     .waitFor();
   await owner.reload();
   await owner.locator("#app-shell:not([hidden])").waitFor();
+  await owner.locator("#account-menu summary").click();
   await owner.locator("[data-community=dashboard]").click();
   await owner
     .locator("#modal-content")
