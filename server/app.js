@@ -1,4 +1,5 @@
 import express from "express";
+import { registerCommunity } from "./community.js";
 import { GENDERS } from "./trip-options.js";
 import { createCityResolver, registerNearbyRoutes } from "./nearby.js";
 import { createPlacesAutocomplete } from "./places.js";
@@ -113,6 +114,7 @@ export function createApp(
       strictTransportSecurity: production ? undefined : false,
     }),
   );
+  app.use("/api/organizer/verification", express.json({ limit: "3mb" }));
   app.use(express.json({ limit: "32kb" }));
   app.get("/healthz", async (req, res) => {
     try {
@@ -312,12 +314,14 @@ export function createApp(
     personName,
     googleAdapter,
   });
+  registerCommunity(app, pool, { requireUser, throttle, cityResolver });
   registerNearbyRoutes(app, pool, { throttle, cityResolver });
   registerTripRoutes(app, pool, {
     requireUser,
     throttle,
     publicUser,
     placesAdapter,
+    cityResolver,
   });
   registerBlockRoutes(app, pool, { requireUser, throttle });
   app.use("/api", (req, res) =>

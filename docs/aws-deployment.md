@@ -115,3 +115,5 @@ Success prints `POSTGRES_RETIRED` after the database removal and HTTPS checks.
 If an AWS update fails, keep the output and inspect the foundation stack events;
 do not force-delete shared network resources. The final snapshot is a historical
 copy, not a current replacement for the MongoDB database.
+
+Before releasing the organizer/community changes, configure `TRIPLING_ADMIN_USER_IDS` and read [Organizer and community release](organizer-community.md). New organizer publishing is denied until application approval; optional document uploads additionally require the stable encrypted-file key secret.

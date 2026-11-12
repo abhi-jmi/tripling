@@ -22,7 +22,7 @@ async function pageFor() {
   contexts.push(ctx);
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(origin + "/");
+  await page.goto(origin + "/#login");
   await page.locator("#auth-submit:not([disabled])").waitFor();
   return page;
 }
@@ -73,10 +73,34 @@ try {
     `organizer-${stamp}@example.com`,
     "Browser Organizer",
   );
+  if (
+    !process.env.TEST_MONGODB_URI ||
+    !process.env.TEST_MONGODB_DATABASE?.endsWith("_test")
+  )
+    throw Error(
+      "Organizer browser fixtures require an explicit local test database.",
+    );
+  const { createDatabase } = await import("../server/db.js");
+  const fixtureDb = await createDatabase({
+    MONGODB_URI: process.env.TEST_MONGODB_URI,
+    MONGODB_DATABASE: process.env.TEST_MONGODB_DATABASE,
+    NODE_ENV: "test",
+  });
+  await fixtureDb.update(
+    "users",
+    { email: `organizer-${stamp}@example.com` },
+    { $set: { organizer_verification: "approved" } },
+  );
+  await fixtureDb.close();
+  await organizer.reload();
+  await organizer.locator("#app-shell:not([hidden])").waitFor();
   await organizer.locator(".create-nav").click();
   const form = organizer.locator("#create-form");
   await form.locator("[name=title]").fill("A shared mountain weekend");
   await form.locator("[name=from]").fill("Delhi");
+  await form
+    .locator("[name=from]")
+    .evaluate((input) => (input.dataset.placeId = "fixture-city"));
   await form.locator("[name=destination]").fill("Manali");
   await form.locator("[name=start]").fill("2099-11-20");
   await form.locator("[name=end]").fill("2099-11-23");
@@ -244,7 +268,7 @@ try {
   contexts.push(mobileCtx);
   const mobile = await mobileCtx.newPage();
   mobile.on("pageerror", (e) => errors.push(e.message));
-  await mobile.goto(origin + "/");
+  await mobile.goto(origin + "/#login");
   await mobile.locator("#auth-submit:not([disabled])").waitFor();
   assert(
     await mobile.evaluate(

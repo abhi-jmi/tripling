@@ -1,5 +1,7 @@
 # Google Places city suggestions
 
+Before deploying the organizer/community release, configure trusted admin account UUIDs and review the [release prerequisites](organizer-community.md). New publishing requires organizer approval and a confirmed starting city.
+
 Destination, starting city, trip creation and profile city use the same keyboard
 accessible combobox. With Places configured, the backend calls Places API (New)
 Autocomplete with the `(cities)` type collection. English results use Indian formatting and a broad geographic bias around
@@ -78,4 +80,4 @@ file and configure key restrictions for that development backend separately.
 Never reuse the production key in browser tests. Automated tests mock Google;
 live billing/API-key activation must be verified in the deployed environment.
 
-Nearby search supports destination and origin city centers through `/api/trips/nearby`, defaults to 50 km, and shows straight-line distances. It adds Place Details calls and may resolve a saved city name through city autocomplete. Ambiguous historical names are excluded with a partial-results notice. Quotas and API-key restrictions still apply. See [upgrade progress](feature-upgrade-progress.md) for current catalog-size limits and remaining phases.
+Nearby search supports destination and origin city centers through `/api/trips/nearby`, defaults to 50 km, and shows straight-line distances. It adds Place Details calls and may resolve a saved city name through city autocomplete. Ambiguous historical names are excluded with a partial-results notice. Quotas and API-key restrictions still apply. See [organizer/community release](organizer-community.md) for indexed search, pagination, location backfill and periodic renewal.

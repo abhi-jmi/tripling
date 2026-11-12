@@ -1,6 +1,15 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling HTTPS frontend and API on ECS Fargate. No resources are created until explicitly deployed.
 Parameters:
+  AdminUserIds:
+    Type: String
+    Default: ""
+    Description: Comma-separated trusted account UUIDs; empty disables all admin access
+  VerificationKeySecretArn:
+    Type: String
+    Default: ""
+    Description: Optional Secrets Manager JSON key with a stable 32-byte base64 document encryption key
+    AllowedPattern: "^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+"
   MongoDBSecretArn:
     Type: String
     Description: Secrets Manager JSON with uri for the verified Atlas cutover target
@@ -56,6 +65,7 @@ Parameters:
     MinLength: 1
     MaxLength: 200
 Conditions:
+  VerificationKeyEnabled: !Not [!Equals [!Ref VerificationKeySecretArn, ""]]
   PlacesEnabled: !Not [!Equals [!Ref GooglePlacesSecretArn, ""]]
   LegacyRollbackEnabled: !Not [!Equals [!Ref LegacyDatabaseSecretArn, ""]]
   GoogleEnabled: !Not [!Equals [!Ref GoogleOAuthSecretArn, ""]]
@@ -125,6 +135,12 @@ Resources:
                 - Effect: Allow
                   Action: secretsmanager:GetSecretValue
                   Resource: !Ref LegacyDatabaseSecretArn
+                - !Ref AWS::NoValue
+              - !If
+                - VerificationKeyEnabled
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref VerificationKeySecretArn
                 - !Ref AWS::NoValue
               - !If
                 - PlacesEnabled
@@ -243,6 +259,10 @@ Resources:
           PortMappings:
             - ContainerPort: 3000
           Environment:
+            - Name: TRIPLING_ADMIN_USER_IDS
+              Value: !Ref AdminUserIds
+            - Name: VERIFICATION_KEY_SECRET_ARN
+              Value: !Ref VerificationKeySecretArn
             - Name: NODE_ENV
               Value: production
             - Name: GOOGLE_PLACES_SECRET_ARN

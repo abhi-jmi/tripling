@@ -1,6 +1,12 @@
 import { readFile } from "node:fs/promises";
 export const COLLECTIONS = [
   "users",
+  "organizer_verifications",
+  "admin_audit",
+  "cancellation_audit",
+  "organizer_reviews",
+  "feedback",
+  "testimonials",
   "sessions",
   "auth_rate_limits",
   "trips",
@@ -19,12 +25,34 @@ export const COLLECTIONS = [
   "block_reason_reports",
   "location_catalog",
   "place_coordinates",
+  "trip_locations",
   "oauth_identities",
   "oauth_flows",
   "oauth_pending",
   "data_transfers",
 ];
 const indexes = {
+  trip_locations: [
+    [{ trip_id: 1 }, { unique: true }],
+    [{ origin: "2dsphere" }, {}],
+    [{ destination: "2dsphere" }, {}],
+    [{ expires_at: 1 }, { expireAfterSeconds: 0 }],
+  ],
+  organizer_verifications: [
+    [{ user_id: 1 }, { unique: true }],
+    [{ status: 1, submitted_at: -1 }, {}],
+  ],
+  admin_audit: [[{ created_at: -1 }, {}]],
+  cancellation_audit: [[{ trip_id: 1, user_id: 1 }, {}]],
+  organizer_reviews: [
+    [{ trip_id: 1, author_id: 1 }, { unique: true }],
+    [{ organizer_id: 1, hidden: 1 }, {}],
+  ],
+  feedback: [[{ status: 1, category: 1, created_at: -1 }, {}]],
+  testimonials: [
+    [{ user_id: 1, trip_id: 1 }, { unique: true }],
+    [{ status: 1, featured: 1 }, {}],
+  ],
   users: [
     [{ id: 1 }, { unique: true }],
     [{ email: 1 }, { unique: true }],
@@ -115,6 +143,11 @@ export async function migrate(db) {
       { $setOnInsert: { name } },
       { upsert: true },
     );
+  await db.updateMany(
+    "organizer_verifications",
+    { document_expires_at: { $lte: new Date() } },
+    { $unset: { document: "" }, $set: { hasDocument: false } },
+  );
   await db.removeMany("sessions", { expires_at: { $lte: new Date() } });
   await db.removeMany("oauth_flows", { expires_at: { $lte: new Date() } });
   await db.removeMany("oauth_pending", { expires_at: { $lte: new Date() } });

@@ -1,9 +1,9 @@
 {
   "slug": "terms",
-  "version": "2026-11-11.6",
+  "version": "2026-11-12.2",
   "title": "Terms and Conditions",
-  "effectiveOn": "2026-11-11",
-  "introduction": "Last updated: November 11, 2026. Welcome to Tripling (the “Platform”). These Terms govern access to and use of our travel companion website. By registering, you agree to these Terms and acknowledge the Privacy Policy. If you do not agree, do not create an account or use the service.",
+  "effectiveOn": "2026-11-12",
+  "introduction": "Last updated: November 12, 2026. Welcome to Tripling (the “Platform”). These Terms govern access to and use of our travel companion website. By registering, you agree to these Terms and acknowledge the Privacy Policy. If you do not agree, do not create an account or use the service.",
   "sections": [
     {
       "heading": "1. Nature of service and responsibility",
@@ -62,7 +62,7 @@
       "paragraphs": [
         "You retain ownership of content you submit and give the operator permission to store, process, and display it as needed to provide the platform, address reports, and meet legal obligations. Share only content you have the right to provide.",
         "Trip listings and published reviews are public. Introductions are shared with the organizer, and messages are shared with registered group members. Reviews should be truthful and focus on travel behavior, communication, and reliability. A membership record does not independently prove that travel occurred.",
-        "Published trip records cannot be deleted or canceled by users. Everyone, including the creator, may leave. Organizer duties transfer to another active registered member; if none remain, requests close and the record stays available. Leaving revokes future group-chat access. Past or canceled trip chats are read-only; retained reviews remain available. Registered participation overlapping the trip dates is required to review another eligible participant after a trip ends. Keep independent booking and emergency information.",
+        "Published trip records cannot be deleted. Verified organizers or administrators may cancel an open trip with a reason, retaining history and notifying members. Participation cancellation is subject to the 24-hour departure restriction and support exceptions described below; pending join requests may be withdrawn. Organizer duties transfer to another active registered member; if none remain, requests close and the record stays available. Leaving revokes future group-chat access. Past or canceled trip chats are read-only; retained reviews remain available. Registered participation overlapping the trip dates is required to review another eligible participant after a trip ends. Keep independent booking and emergency information.",
         "The operator may investigate complaints and restrict or suspend access where reasonably necessary for safety, security, legal requirements, or violations of these Terms. Notice, reasons, and opportunities to challenge a decision should be provided where required or appropriate. Contact {{contact}} to raise a complaint or question a restriction.",
         "Updates are versioned and dated. Signup records the versions accepted. Material changes affecting existing users must be communicated and any further consent required by law obtained; continued use is not treated as a substitute for legally required consent.",
         "Any signed-in traveler may block another traveler with a category and a reason of at least 20 characters. Choose a private block or share the reason only with registered participants of one trip both travelers participated in. Do not include private contact information, identity documents, threats or knowingly false allegations. Shared reasons are statements by their authors, not verified findings. Participants can report a statement. Blocks hide messages between the affected travelers and prevent new group requests or approvals involving them; existing membership remains until a traveler leaves. Only the author can unblock through the app."
@@ -73,6 +73,15 @@
       "paragraphs": [
         "These Terms are governed by the laws of India. Subject to mandatory consumer rights, other statutory protections, and the jurisdiction of competent courts or tribunals required by law, disputes are intended to be brought before the competent courts in Chandigarh, India.",
         "Contact {{contact}} about a dispute, privacy concern, grievance, or account-closure request. We encourage contacting the operator first to try to resolve a concern, without limiting a right to approach a regulator or another legally available forum."
+      ]
+    },
+    {
+      "heading": "Organizer approval, cancellations and community submissions",
+      "paragraphs": [
+        "Organizers must obtain application approval before publishing or managing trips. A Verified Organizer badge records an application decision, not government identity verification, guaranteed competence, insurance or a guarantee of safety. Administrators review submitted references and may approve or reject requests with a reason. Optional supporting documents must not contain government IDs.",
+        "New trips require a confirmed starting city and an actual departure time with timezone. A participant cannot cancel active participation within 24 hours of departure, including exactly 24 hours. Contact abhishek@tripling.in for exceptional requests; administrators must record a reason. Missing legacy departure times must be confirmed rather than inferred. Completed or canceled memberships can be ended. Verified organizers may cancel an open trip with a reason; records are retained and active participants are notified.",
+        "Only confirmed participants whose participation overlaps a completed trip may review its organizer. Self-reviews and duplicate trip reviews are prohibited. Administrators can hide abusive reviews with a recorded moderation reason. Testimonials are voluntary and require explicit consent for name/message/trip-title publication plus administrator approval. Withdraw publication consent or request correction through the support contact.",
+        "Feedback submissions are private to authorized operators. Do not include passwords, government IDs, payment details or other unnecessary sensitive information. Feedback is not an emergency channel and does not guarantee an immediate response."
       ]
     }
   ]

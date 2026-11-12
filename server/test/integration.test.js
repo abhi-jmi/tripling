@@ -46,7 +46,18 @@ const googleAdapter = {
     }),
   exchange: async () => googleClaims,
 };
-const app = createApp(pool, { production: false, googleAdapter });
+const app = createApp(pool, {
+  production: false,
+  googleAdapter,
+  cityResolver: async (name, placeId) => ({
+    latitude: 28.61,
+    longitude: 77.2,
+    label: name + ", India",
+    city: name,
+    state: "Delhi",
+    placeId,
+  }),
+});
 const server = app.listen(0, "127.0.0.1");
 await new Promise((resolve) => server.once("listening", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -54,11 +65,18 @@ class Client {
   cookie = "";
   ip = null;
   async request(path, { method = "GET", body, origin = base } = {}) {
+    if (path === "/trips" && method === "POST" && body)
+      body = {
+        fromPlaceId: "test-city-id",
+        departureUtc: body.start + "T12:00:00.000Z",
+        timeZone: "UTC",
+        ...body,
+      };
     const response = await fetch(base + "/api" + path, {
       method,
       headers: {
         "Content-Type": "application/json",
-        ...(this.ip ? {"X-Forwarded-For":this.ip} : {}),
+        ...(this.ip ? { "X-Forwarded-For": this.ip } : {}),
         ...(origin ? { Origin: origin } : {}),
         ...(this.cookie ? { Cookie: this.cookie } : {}),
       },
@@ -89,6 +107,13 @@ class Client {
       },
     });
     assert.equal(r.status, 201);
+    // Existing workflow fixtures explicitly start as approved; authorization
+    // denial/approval itself is covered in community.test.js.
+    await pool.update(
+      "users",
+      { id: r.body.user.id },
+      { $set: { organizer_verification: "approved" } },
+    );
     return r.body.user;
   }
   async profile(name, gender = "other") {

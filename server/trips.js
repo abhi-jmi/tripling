@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { indexTripLocation } from "./geo-index.js";
+import { randomUUID } from "node:crypto";
+import {
+  requireVerified,
+  canCancelParticipation,
+  cancellationMessage,
+} from "./roles.js";
 import {
   TRAVEL_STYLES,
   LEGACY_STYLES,
@@ -32,6 +39,8 @@ const tripSchema = z
       .regex(/^[a-zA-Z0-9_-]{1,250}$/)
       .optional(),
     start: z.iso.date(),
+    departureUtc: z.iso.datetime({ offset: true }),
+    timeZone: z.string().max(80),
     end: z.iso.date(),
     min: z.number().int().min(0).max(1000000),
     max: z.number().int().min(0).max(1000000),
@@ -41,8 +50,10 @@ const tripSchema = z
     groupEligibility: z.enum(["men", "women", "mixed"]).optional(),
     fromPlaceId: z
       .string()
-      .regex(/^[a-zA-Z0-9_-]{1,250}$/)
-      .optional(),
+      .regex(
+        /^[a-zA-Z0-9_-]{1,250}$/,
+        "Select a starting city from the location suggestions.",
+      ),
     mode: z.enum(["Bus", "Train", "Shared cab", "Self-drive", "Flight"]),
     description: z.string().trim().min(25).max(1200),
     plan: z.string().trim().max(2000).default(""),
@@ -72,10 +83,17 @@ function serialize(t) {
     id: t.id,
     ownerId: t.owner_id,
     organizerId: t.organizer_id,
+    reviewOrganizerId: t.review_organizer_id || t.organizer_id || t.owner_id,
     creator: t.creator,
     title: t.title,
     destination: t.destination,
     from: t.from_city,
+    departureUtc: t.departure_utc || null,
+    timeZone: t.departure_timezone || null,
+    cancellationAllowed: canCancelParticipation(t),
+    verifiedOrganizer: !!t.host_verified,
+    organizerRating: t.organizer_rating ?? null,
+    organizerReviewCount: t.organizer_review_count || 0,
     start: t.starts_on,
     end: t.ends_on,
     min: t.budget_min,
@@ -129,7 +147,15 @@ const userMap = async (db, ids) =>
       await db.all(
         "users",
         { id: { $in: [...new Set(ids.filter(Boolean))] } },
-        { projection: { _id: 0, id: 1, display_name: 1, bio: 1 } },
+        {
+          projection: {
+            _id: 0,
+            id: 1,
+            display_name: 1,
+            bio: 1,
+            organizer_verification: 1,
+          },
+        },
       )
     ).map((u) => [u.id, u]),
   );
@@ -141,7 +167,7 @@ async function crewLocks(db, id, user) {
 export function registerTripRoutes(
   app,
   pool,
-  { requireUser, throttle, publicUser, placesAdapter },
+  { requireUser, throttle, publicUser, placesAdapter, cityResolver },
 ) {
   app.get("/api/locations", async (req, res) => {
     const q = z
@@ -206,6 +232,20 @@ export function registerTripRoutes(
       pool,
       records.flatMap((t) => [t.owner_id, t.organizer_id]),
     );
+    const reputation = await pool.database
+      .collection("organizer_reviews")
+      .aggregate([
+        { $match: { hidden: { $ne: true } } },
+        {
+          $group: {
+            _id: "$organizer_id",
+            average: { $avg: "$rating" },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray();
+    const repMap = new Map(reputation.map((r) => [r._id, r]));
     const tripList = records
       .filter(
         (t) =>
@@ -216,6 +256,10 @@ export function registerTripRoutes(
         const ratings = reviews.filter((r) => r.trip_id === t.id);
         return serialize({
           ...t,
+          organizer_rating: repMap.get(t.organizer_id)?.average,
+          organizer_review_count: repMap.get(t.organizer_id)?.count,
+          host_verified:
+            users.get(t.organizer_id)?.organizer_verification === "approved",
           host:
             users.get(t.organizer_id)?.display_name || "No active organizer",
           creator: users.get(t.owner_id)?.display_name || "Former traveler",
@@ -315,6 +359,7 @@ export function registerTripRoutes(
   });
   app.post("/api/trips", requireUser, async (req, res) => {
     requireNames(req);
+    await requireVerified(pool, req.user.id);
     await throttle(req, `create:${req.user.id}`, 30);
     const d = tripSchema.parse(req.body);
     if (!req.user.adult_confirmed)
@@ -326,6 +371,20 @@ export function registerTripRoutes(
         403,
         "Complete your self-declared gender profile before creating a restricted group.",
       );
+    let departure;
+    try {
+      departure = new Date(d.departureUtc);
+      if (
+        new Intl.DateTimeFormat("en-CA", { timeZone: d.timeZone }).format(
+          departure,
+        ) !== d.start
+      )
+        fail(400, "Departure time must match the trip date.");
+    } catch (error) {
+      if (error.status) throw error;
+      fail(400, "Use a valid departure time and timezone.");
+    }
+    if (departure <= new Date()) fail(400, "Departure must be in the future.");
     const image =
       d.category === "Beach"
         ? "goa"
@@ -334,17 +393,43 @@ export function registerTripRoutes(
           : d.category === "Weekend"
             ? "udaipur"
             : "manali";
+    // Resolve before opening a transaction; all persisted trip/index writes
+    // still commit atomically. Resolver failures do not publish a partial trip.
+    const newId = randomUUID();
+    const indexed = await indexTripLocation(
+      { update: async () => {} },
+      {
+        id: newId,
+        from_city: d.from,
+        from_place_id: d.fromPlaceId,
+        destination: d.destination,
+        destination_place_id: d.destinationPlaceId,
+      },
+      { resolver: cityResolver, requiredOrigin: true },
+    );
     const id = await transaction(pool, async (db) => {
+      await lockTravelers(db, [req.user.id]);
+      await requireVerified(db, req.user.id);
       const t = await db.insert("trips", {
+        id: newId,
+        starting_location: {
+          city: indexed.record.origin_city,
+          state: indexed.record.origin_state,
+          displayName: indexed.record.origin_label,
+          placeId: d.fromPlaceId,
+        },
         owner_id: req.user.id,
         organizer_id: req.user.id,
         title: d.title,
-        destination: d.destination,
+        destination: indexed.record.destination_city || d.destination,
         ...(d.destinationPlaceId
           ? { destination_place_id: d.destinationPlaceId }
           : {}),
-        from_city: d.from,
+        from_city: indexed.record.origin_city,
         starts_on: d.start,
+        departure_utc: departure,
+        departure_timezone: d.timeZone,
+        review_organizer_id: req.user.id,
         ends_on: d.end,
         budget_min: d.min,
         budget_max: d.max,
@@ -360,6 +445,12 @@ export function registerTripRoutes(
         rules: d.rules,
         image,
       });
+      await db.update(
+        "trip_locations",
+        { trip_id: t.id },
+        { $set: indexed.record },
+        { upsert: true },
+      );
       await addMember(db, t.id, req.user.id);
       return t.id;
     });
@@ -450,6 +541,26 @@ export function registerTripRoutes(
     const organizerId = await transaction(pool, async (db) => {
       const t = await lockTrip(db, id);
       if (!t) fail(404, "Trip not found.");
+      const membership = await db.one("trip_members", {
+        trip_id: id,
+        user_id: req.user.id,
+      });
+      if (membership) {
+        const allowed = canCancelParticipation(t);
+        if (allowed === null)
+          fail(
+            409,
+            "Departure time is missing for this legacy trip. Contact support for cancellation.",
+          );
+        if (!allowed) fail(409, cancellationMessage);
+      }
+      await db.insert("cancellation_audit", {
+        trip_id: id,
+        user_id: req.user.id,
+        actor_id: req.user.id,
+        action: "participation_canceled",
+        created_at: new Date(),
+      });
       await db.update(
         "join_requests",
         { trip_id: id, user_id: req.user.id },
@@ -466,7 +577,20 @@ export function registerTripRoutes(
               { sort: { joined_at: 1, user_id: 1 }, limit: 1 },
             )
           )[0]?.user_id || null;
-        await db.update("trips", { id }, { $set: { organizer_id: organizer } });
+        await db.update(
+          "trips",
+          { id },
+          {
+            $set: {
+              organizer_id: organizer,
+              ...(organizer &&
+              t.departure_utc &&
+              new Date(t.departure_utc) > new Date()
+                ? { review_organizer_id: organizer }
+                : {}),
+            },
+          },
+        );
         if (organizer)
           await notify(
             db,
@@ -497,6 +621,8 @@ export function registerTripRoutes(
       if (!t) fail(404, "Trip not found.");
       if (t.organizer_id !== req.user.id)
         fail(403, "Only the current organizer can review requests.");
+      await lockTravelers(db, [req.user.id]);
+      await requireVerified(db, req.user.id);
       if (t.status !== "open" || t.ends_on < travelDate())
         fail(409, "This trip is no longer accepting travelers.");
       const request = await db.one("join_requests", {

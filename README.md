@@ -58,3 +58,10 @@ The selected production target is MongoDB Atlas on AWS Sydney (`ap-southeast-2`)
 Existing RDS resources are kept in the legacy foundation template during cutover. New installations use `infra/foundation-mongodb.yaml` and do not create RDS. The helper selects the existing foundation shape without removing database resources. Retire the old database separately after backups and acceptance; this repository does not delete your production database.
 
 City autocomplete can use Google Places API (New); see [Google Places setup](docs/google-places.md) for server-side key restrictions, AWS secret configuration and deployment.
+
+Organizer publishing now requires explicit application approval. Configure trusted
+admin account UUIDs before releasing this increment; no existing organizer is
+silently approved. See [Organizer and community release](docs/organizer-community.md)
+for private-document encryption setup, legacy departure confirmation, indexed
+location backfill, cancellation policy, feedback/testimonial moderation and tests.
+No production deployment is performed by these source changes.
