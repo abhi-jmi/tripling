@@ -72,7 +72,9 @@ try {
     });
     await page.locator(".site-footer [data-community=feedback]").click();
     await page.locator("[data-community-form=feedback]").waitFor();
-    await page.locator(".modal-close").click();
+    assert.equal(await page.locator("dialog[open]").count(), 0);
+    await page.goBack();
+    await page.locator(".explore").waitFor();
     assert.deepEqual(errors, []);
     await page.close();
     console.log(`Layout and inline filters passed at ${width}px.`);

@@ -158,10 +158,13 @@ async function refresh() {
     api,
     esc,
     modal: openModal,
+    page: renderCommunityPage,
+    route: renderLocation,
     toast,
     refresh,
     data: () => data,
-    login: () => requireLogin({ type: "profile" }),
+    login: (path) =>
+      requireLogin(path ? { type: "community", path } : { type: "profile" }),
   });
   state = {
     profile: data.user || {
@@ -192,7 +195,8 @@ function requireLogin(action) {
 function requestLogin(action) {
   auth.remember(action);
   if (modal.open) closeModal();
-  location.hash = "login";
+  if (location.pathname !== "/") history.pushState(null, "", "/#login");
+  else location.hash = "login";
   setView("login");
   window.scrollTo({ top: 0 });
 }
@@ -252,7 +256,57 @@ function setAuthMode(mode) {
   $("#login-password").value = "";
   $("#confirm-password").value = "";
 }
+function renderCommunityPage(title, body) {
+  view = "community";
+  if (modal.open) closeModal();
+  $("#login-page").hidden = true;
+  $("#app-shell").hidden = false;
+  document.body.classList.remove("auth-screen");
+  document
+    .querySelectorAll("#main > section")
+    .forEach((section) => (section.hidden = section.id !== "community-page"));
+  $("#community-page-title").textContent = title;
+  $("#community-page-content").innerHTML = body;
+  $("#community-page-breadcrumb").textContent = title;
+  $("#community-page-admin-link").hidden = !data.user?.isAdmin;
+  document.querySelectorAll("#community-page-nav a").forEach((link) => {
+    if (new URL(link.href).pathname === location.pathname)
+      link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  document.querySelectorAll(".header [data-view]").forEach((link) => {
+    link.classList.remove("active");
+    link.removeAttribute("aria-current");
+  });
+  $("#account-menu").open = false;
+  document.title = title + " — Tripling";
+  icons($("#community-page"));
+  window.TriplingLocations.init($("#community-page"));
+  window.scrollTo({ top: 0, behavior: "instant" });
+  $("#community-page-title").focus({ preventScroll: true });
+}
+async function renderLocation() {
+  const hash = location.hash.slice(1);
+  if (hash === "sso-complete") return completeGoogle().catch(errorMessage);
+  if (hash === "profile" && auth.session) {
+    setView("discover");
+    return profile();
+  }
+  if (
+    hash &&
+    ["login", "discover", "my-trips", "saved", "past-trips"].includes(hash)
+  )
+    return setView(hash);
+  if (window.TriplingCommunity.hasPath(location.pathname))
+    return window.TriplingCommunity.showRoute();
+  setView(hash || "discover");
+}
 function setView(next) {
+  window.TriplingCommunity.invalidate();
+  $("#community-page").hidden = true;
+  $(".explore").hidden = false;
+  if (window.TriplingCommunity.hasPath(location.pathname))
+    history.replaceState(null, "", "/#" + (next || "discover"));
   if (next === "login") {
     if (auth.session) {
       location.hash = "discover";
@@ -274,6 +328,7 @@ function setView(next) {
       report: "Log in to record a report.",
       chat: "Log in to open your group chat.",
       notifications: "Log in to see your notifications.",
+      community: "Log in to continue to your requested page.",
     };
     $("#login-context").hidden = !action;
     $("#login-context").textContent = messages[action?.type] || "";
@@ -654,6 +709,14 @@ async function resumeAction() {
   setView("discover");
   window.scrollTo({ top: 0 });
   if (!action) return;
+  if (
+    action.type === "community" &&
+    typeof action.path === "string" &&
+    window.TriplingCommunity.hasPath(action.path.split("?")[0])
+  ) {
+    await window.TriplingCommunity.navigate(action.path);
+    return;
+  }
   if (action.type === "view") {
     const next = ["saved", "my-trips"].includes(action.view)
       ? action.view
@@ -1135,12 +1198,10 @@ document.addEventListener("submit", async (event) => {
     if (button) button.disabled = false;
   }
 });
-window.addEventListener("hashchange", () => {
-  const hash = location.hash.slice(1);
-  if (hash === "sso-complete") completeGoogle().catch(errorMessage);
-  else if (hash === "profile" && auth.session) profile();
-  else setView(hash);
-});
+window.addEventListener("hashchange", () =>
+  renderLocation().catch(errorMessage),
+);
+window.addEventListener("popstate", () => renderLocation().catch(errorMessage));
 window.addEventListener("focus", () => {
   if (view !== "login") refresh().catch(errorMessage);
 });
@@ -1292,13 +1353,13 @@ async function boot() {
   $("#auth-submit").disabled = true;
   try {
     await refresh();
-    setView(location.hash.slice(1) || "discover");
+    await renderLocation();
     if (data.user && auth.pending && location.hash === "#discover")
       await resumeAction();
-    if (location.hash === "#sso-complete") await completeGoogle();
-    else if (
+    if (
       data.user &&
-      (!data.user.profileComplete || location.hash === "#profile")
+      !data.user.profileComplete &&
+      !["#profile", "#sso-complete"].includes(location.hash)
     )
       profile();
     const authError = new URLSearchParams(location.search).get("auth_error");
@@ -1322,7 +1383,12 @@ async function boot() {
     $("#login-error").hidden = false;
     $("#connection-error").textContent = error.message;
     $("#connection-error").hidden = false;
-    setView(location.hash.slice(1) || "discover");
+    if (window.TriplingCommunity.hasPath(location.pathname))
+      renderCommunityPage(
+        "Unable to load page",
+        `<p class="community-error" role="alert">${esc(error.message)}</p><a class="secondary" href="${esc(location.pathname + location.search)}">Try again</a>`,
+      );
+    else setView(location.hash.slice(1) || "discover");
   } finally {
     $("#auth-submit").disabled = false;
   }

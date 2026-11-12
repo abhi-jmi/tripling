@@ -159,6 +159,31 @@ test("community authorization, verified publishing, moderation and private data"
   };
   try {
     await t.test(
+      "community pages support direct URLs and root-relative assets without exposing private data",
+      async () => {
+        for (const path of [
+          "/organizer/dashboard",
+          "/organizer/verification",
+          "/admin",
+          "/feedback",
+        ]) {
+          const r = await fetch(base + path);
+          assert.equal(r.status, 200);
+          assert.match(r.headers.get("content-type"), /text\/html/);
+          assert.match(r.headers.get("cache-control"), /no-store/);
+          const html = await r.text();
+          assert.match(html, /<base href="\/"/);
+          assert(!html.includes("contact@example.test"));
+        }
+        const trailing = await fetch(base + "/admin/?offset=100", {
+          redirect: "manual",
+        });
+        assert.equal(trailing.status, 308);
+        assert.equal(trailing.headers.get("location"), "/admin?offset=100");
+        assert.equal((await fetch(base + "/not-a-page")).status, 404);
+      },
+    );
+    await t.test(
       "guests read public data but cannot manage verification",
       async () => {
         assert.equal((await guest.request("/bootstrap")).status, 200);
