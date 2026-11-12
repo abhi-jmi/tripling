@@ -86,6 +86,7 @@ let view = "login",
   visibleCount = 6,
   currentTrip = null;
 const trips = () => data.trips;
+const SEARCH_RADIUS_KM = 50;
 let nearbySearch = null,
   searchVersion = 0,
   nearbyRequestedCount = 6;
@@ -93,13 +94,13 @@ const activeNearby = () =>
   view === "discover" &&
   nearbySearch?.query === $("#destination").value.trim().toLowerCase() &&
   nearbySearch?.origin === $("#origin").value.trim().toLowerCase() &&
-  nearbySearch?.radius === +$("#search-radius").value
+  nearbySearch?.radius === SEARCH_RADIUS_KM
     ? nearbySearch
     : null;
 
 const hasNearbyQuery = () =>
   view === "discover" &&
-  +$("#search-radius").value > 0 &&
+  SEARCH_RADIUS_KM > 0 &&
   !!($("#destination").value.trim() || $("#origin").value.trim());
 let modalVersion = 0,
   chatTimer = null,
@@ -876,7 +877,7 @@ $("#search-form").addEventListener("submit", async (event) => {
   const version = ++searchVersion,
     query = $("#destination").value.trim(),
     origin = $("#origin").value.trim(),
-    radius = +$("#search-radius").value;
+    radius = SEARCH_RADIUS_KM;
   nearbySearch = null;
   $("#nearby-attribution").hidden = true;
   $("#nearby-status").textContent =
@@ -885,7 +886,7 @@ $("#search-form").addEventListener("submit", async (event) => {
     version === searchVersion &&
     query === $("#destination").value.trim() &&
     origin === $("#origin").value.trim() &&
-    radius === +$("#search-radius").value;
+    radius === SEARCH_RADIUS_KM;
   if (radius && (query || origin))
     try {
       const field = origin ? "origin" : "destination",
@@ -968,9 +969,6 @@ $("#search-form").addEventListener("submit", async (event) => {
   render();
   $(".explore").scrollIntoView({ behavior: "smooth", block: "start" });
 });
-$("#search-radius").addEventListener("change", () =>
-  $("#search-form").requestSubmit(),
-);
 for (const selector of ["#destination", "#origin"])
   $(selector).addEventListener("input", () => {
     searchVersion++;

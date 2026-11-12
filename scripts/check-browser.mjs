@@ -256,7 +256,7 @@ try {
     .getByText(/starting point/)
     .waitFor();
   await organizer.locator("#origin").fill("");
-  await organizer.locator("#search-radius").selectOption("0");
+  await organizer.locator("#search-form").evaluate(form=>form.requestSubmit());
   await organizer.screenshot({
     path: resolve("work/browser-check/discovery-desktop.png"),
     fullPage: true,
