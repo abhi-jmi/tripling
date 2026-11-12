@@ -333,6 +333,24 @@ export function createApp(
       maxAge: 0,
     }),
   );
+  app.get(
+    ["/organizer/dashboard", "/organizer/verification", "/admin", "/feedback"],
+    (req, res) => {
+      if (req.path.endsWith("/"))
+        return res.redirect(
+          308,
+          req.path.slice(0, -1) +
+            (req.originalUrl.includes("?")
+              ? "?" + req.originalUrl.split("?").slice(1).join("?")
+              : ""),
+        );
+      return res
+        .set("Cache-Control", "no-store")
+        .sendFile(
+          fileURLToPath(new URL("../dist/index.html", import.meta.url)),
+        );
+    },
+  );
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
     if (err instanceof z.ZodError)

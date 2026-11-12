@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#24483e" />
     <meta
@@ -223,12 +224,21 @@
             <details class="account-menu" id="account-menu">
               <summary>Organize <span aria-hidden="true">⌄</span></summary>
               <div class="account-menu-panel">
-                <button data-community="dashboard">Organizer dashboard</button
-                ><button data-community="verification">
-                  Verification status</button
-                ><button id="community-admin" data-community="admin" hidden>
-                  Administration</button
-                ><button data-community="feedback">Write to Us</button>
+                <a data-community="dashboard" href="/organizer/dashboard"
+                  >Organizer dashboard</a
+                ><a
+                  data-community="verification"
+                  href="/organizer/verification"
+                >
+                  Verification status</a
+                ><a
+                  id="community-admin"
+                  data-community="admin"
+                  hidden
+                  href="/admin"
+                >
+                  Administration</a
+                ><a data-community="feedback" href="/feedback">Write to Us</a>
               </div>
             </details>
             <button class="safety-nav" data-action="safety">
@@ -265,6 +275,40 @@
         </div>
       </header>
       <main id="main">
+        <section
+          id="community-page"
+          class="container community-page"
+          aria-labelledby="community-page-title"
+          hidden
+        >
+          <div class="page-breadcrumb">
+            <a href="/#discover">Home</a><span aria-hidden="true">/</span
+            ><span id="community-page-breadcrumb">Organize</span>
+          </div>
+          <div class="community-page-layout">
+            <nav
+              id="community-page-nav"
+              aria-label="Organizer and support pages"
+            >
+              <a data-community="dashboard" href="/organizer/dashboard"
+                >Organizer dashboard</a
+              ><a data-community="verification" href="/organizer/verification"
+                >Verification status</a
+              ><a data-community="feedback" href="/feedback">Write to Us</a
+              ><a
+                data-community="admin"
+                href="/admin"
+                id="community-page-admin-link"
+                hidden
+                >Administration</a
+              >
+            </nav>
+            <div class="community-page-main">
+              <h1 id="community-page-title" tabindex="-1"></h1>
+              <div id="community-page-content" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
         <section id="discovery-intro">
           <div class="hero container">
             <div class="hero-copy">
@@ -595,8 +639,10 @@
           <nav aria-label="Help and community">
             <h3>Community</h3>
             <button data-action="safety">Community & safety</button
-            ><button data-community="feedback">Write to Us</button
-            ><button data-community="verification">Become an organizer</button>
+            ><a data-community="feedback" href="/feedback">Write to Us</a
+            ><a data-community="verification" href="/organizer/verification"
+              >Become an organizer</a
+            >
           </nav>
           <nav aria-label="Legal information">
             <h3>Good to know</h3>

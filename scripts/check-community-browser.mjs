@@ -62,7 +62,7 @@ try {
     );
   await verification.locator("[type=submit]").click();
   await owner
-    .locator("#modal-content strong")
+    .locator("#community-page-content strong")
     .getByText("pending", { exact: true })
     .waitFor();
   const admin = await browser.newPage();
@@ -106,12 +106,13 @@ try {
   await owner.reload();
   await owner.locator("#app-shell:not([hidden])").waitFor();
   await owner.locator("#account-menu summary").click();
-  await owner.locator("[data-community=dashboard]").click();
+  await owner.locator("#account-menu [data-community=dashboard]").click();
   await owner
-    .locator("#modal-content")
+    .locator("#community-page-content")
     .getByText("approved", { exact: false })
     .waitFor();
-  await owner.locator(".modal-close").click();
+  await owner.goto(origin + "/#discover");
+  await owner.locator("#app-shell:not([hidden])").waitFor();
   await owner.locator(".create-nav").click();
   await owner.locator("#create-form").waitFor();
   assert(await owner.locator("[name=departureTime]").isVisible());

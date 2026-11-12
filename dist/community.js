@@ -1,5 +1,64 @@
 (() => {
-  let c;
+  let c,
+    routeVersion = 0;
+  const pagePaths = {
+    dashboard: "/organizer/dashboard",
+    verification: "/organizer/verification",
+    admin: "/admin",
+    feedback: "/feedback",
+  };
+  const hasPath = (path) => Object.values(pagePaths).includes(path);
+  function pageOptions() {
+    const path = location.pathname,
+      version = routeVersion;
+    return {
+      page: hasPath(path),
+      valid: () => location.pathname === path && routeVersion === version,
+    };
+  }
+  async function navigate(path) {
+    const url = new URL(path, location.origin);
+    if (url.origin !== location.origin || !hasPath(url.pathname))
+      throw Error("Unknown Tripling page.");
+    if (
+      location.pathname + location.search !== url.pathname + url.search ||
+      location.hash
+    )
+      history.pushState(null, "", url.pathname + url.search);
+    return c.route();
+  }
+  async function showRoute() {
+    const version = ++routeVersion,
+      path = location.pathname,
+      opts = {
+        page: true,
+        valid: () => routeVersion === version && location.pathname === path,
+      };
+    if (!hasPath(path)) return false;
+    if (path !== pagePaths.feedback && !c.login(path + location.search))
+      return true;
+    c.page("Loading…", '<p role="status">Loading your page…</p>');
+    try {
+      if (path === pagePaths.dashboard) await dashboard(opts);
+      if (path === pagePaths.verification) await verification(opts);
+      if (path === pagePaths.feedback) await feedback(opts);
+      if (path === pagePaths.admin) {
+        if (!c.data().user?.isAdmin)
+          throw Object.assign(new Error("Administrator access is required."), {
+            status: 403,
+          });
+        await admin(location.search, opts);
+      }
+    } catch (error) {
+      if (opts.valid())
+        c.page(
+          error.status === 403 ? "Access restricted" : "Unable to load page",
+          `<p class="community-error" role="alert">${esc(error.message)}</p><a class="secondary" href="${esc(path + location.search)}">Try again</a>`,
+        );
+    }
+    return true;
+  }
+
   const esc = (v) => c.esc(String(v ?? ""));
   const field = (name, label, value = "", type = "text") =>
     `<label class="form-field">${label}<input name="${name}" type="${type}" value="${esc(value)}" required></label>`;
@@ -9,10 +68,15 @@
         (v) => `<option ${v === current ? "selected" : ""}>${esc(v)}</option>`,
       )
       .join("");
-  const frame = (title, body) =>
-    c.modal(
-      `<div class="modal-pad"><h2 id="modal-title">${title}</h2><p class="community-error" role="alert"></p>${body}</div>`,
-    );
+  const frame = (title, body, opts = {}) => {
+    if (opts.valid && !opts.valid()) return;
+    if (opts.page)
+      c.page(title, `<p class="community-error" role="alert"></p>${body}`);
+    else
+      c.modal(
+        `<div class="modal-pad"><h2 id="modal-title">${title}</h2><p class="community-error" role="alert"></p>${body}</div>`,
+      );
+  };
   const form = (action, body) =>
     `<form class="community-form" data-community-form="${action}">${body}<button class="primary" type="submit">Submit</button></form>`;
   const hidden = (name, value) =>
@@ -27,16 +91,17 @@
     "Trip Related",
     "Other",
   ];
-  async function verification() {
-    if (!c.login()) return;
+  async function verification(opts = {}) {
+    if (!c.login(pagePaths.verification)) return;
     const r = await c.api("/organizer/verification");
     frame(
       "Organizer verification",
       `<p>Status: <strong>${esc(r.status)}</strong></p>${r.request?.reason ? `<p>${esc(r.request.reason)}</p>` : ""}<p>Approval reflects an organizer application review, not a guarantee of safety. Do not submit Aadhaar, passport or other government identity documents. A business or experience reference is sufficient.</p>${["pending", "approved"].includes(r.status) ? "" : form("verification", field("name", "Organizer or business name", c.data().user.name) + field("contact", "Private contact details", c.data().user.email) + message("experience", "Travel organizing experience and references", "", 30) + (r.documentUploadsEnabled ? '<label class="form-field">Optional supporting PDF, PNG or JPEG (2 MB maximum)<input name="document" type="file" accept="application/pdf,image/png,image/jpeg"></label>' : "<p>Document uploads are unavailable until private encryption storage is configured. You can submit your details for review.</p>"))}`,
+      opts,
     );
   }
-  async function dashboard() {
-    if (!c.login()) return;
+  async function dashboard(opts = {}) {
+    if (!c.login(pagePaths.dashboard)) return;
     const r = await c.api("/organizer/dashboard");
     frame(
       "Organizer dashboard",
@@ -47,6 +112,7 @@
         .join(
           "",
         )}</div><button class="primary" data-action="create">Create trip</button><button class="secondary" data-community="profile" data-id="${esc(c.data().user.id)}">Organizer profile & reviews</button>${r.trips.map((t) => `<article class="request-item"><h3>${esc(t.title)}</h3><p>${esc(t.from_city)} → ${esc(t.destination)} · ${esc(t.starts_on)} · ${esc(t.status)}</p><div class="modal-actions"><button class="secondary" data-trip="${t.id}">View trip</button><button class="secondary" data-incoming="${t.id}">Join requests</button><button class="secondary" data-community="edit" data-id="${t.id}">Edit</button><button class="secondary" data-community="participants" data-id="${t.id}">Participants</button><button class="secondary" data-community="cancel" data-id="${t.id}">Cancel trip</button></div></article>`).join("") || "<p>You have no organized trips yet.</p>"}`,
+      opts,
     );
   }
   async function edit(id) {
@@ -109,7 +175,7 @@
       `<p>${r.verified ? "✓ Verified Organizer" : "Organizer application not approved"}</p><p>${esc(r.bio)}</p><p>${r.average ? r.average.toFixed(1) + "/5" : "No ratings yet"} · ${r.total} reviews</p><p>${r.distribution.map((n, i) => `${i + 1} stars: ${n}`).join(" · ")}</p>${r.reviews.map((v) => `<article class="request-item"><strong>${v.rating}/5 · ${esc(v.author_name)}</strong><p>${esc(v.body)}</p><small>${esc(v.trip_title)}</small></article>`).join("")}${trips.length ? form("organizer-review", `<label class="form-field">Completed trip<select name="tripId">${trips.map((t) => `<option value="${t.id}">${esc(t.title)}</option>`).join("")}</select></label><label class="form-field">Stars<select name="rating">${options(["5", "4", "3", "2", "1"])}</select></label>` + message("body", "Your review")) : ""}`,
     );
   }
-  async function admin(query = "") {
+  async function admin(query = "", opts = {}) {
     const offset = +(
       new URLSearchParams(query.replace(/^\?/, "")).get("offset") || 0
     );
@@ -125,9 +191,21 @@
   <h3>Organizer reviews</h3>${r.reviews.map((v) => `<article class="request-item"><p>${esc(v.body)}</p>${form("review-moderate", hidden("id", v.id) + `<label class="check-label"><input name="hidden" type="checkbox" ${v.hidden ? "checked" : ""}>Hide from public</label>` + field("reason", "Moderation reason"))}</article>`).join("")}
   <h3>Location index maintenance</h3>${form("reindex", "<p>Refresh up to 25 missing or expired trip locations. Google API billing applies; ambiguous cities remain excluded.</p>")}<h3>Exceptional cancellation</h3>${form("override", field("trip", "Trip UUID") + field("user", "Participant UUID") + message("reason", "Required exception reason"))}
   <h3>Audit history</h3>${r.audit.map((a) => `<p>${esc(a.created_at)} · ${esc(a.action)} · ${esc(a.subject)} · ${esc(a.reason)}</p>`).join("")}`,
+      opts,
     );
+    if (!opts.valid || opts.valid()) {
+      const filters = document.querySelector(
+        (opts.page ? "#community-page-content" : "#modal-content") +
+          ' [data-community-form="feedback-filter"]',
+      );
+      if (filters) {
+        const values = new URLSearchParams(query.replace(/^\?/, ""));
+        filters.elements.category.value = values.get("category") || "";
+        filters.elements.status.value = values.get("status") || "";
+      }
+    }
   }
-  async function feedback() {
+  async function feedback(opts = {}) {
     frame(
       "Write to Us",
       form(
@@ -137,6 +215,7 @@
           `<label class="form-field">Category<select name="category">${options(categories)}</select></label><label class="feedback-trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>` +
           message("message", "Your message", "", 20),
       ),
+      opts,
     );
   }
   async function testimonial() {
@@ -174,8 +253,14 @@
       c = ctx;
       publicSection().catch(() => {});
     },
-    verification,
-    dashboard,
+    verification: () => navigate(pagePaths.verification),
+    dashboard: () => navigate(pagePaths.dashboard),
+    navigate,
+    hasPath,
+    showRoute,
+    invalidate: () => {
+      routeVersion++;
+    },
     organizer,
   };
   document.addEventListener("click", async (e) => {
@@ -183,11 +268,19 @@
     if (!b || !c) return;
     try {
       const name = b.dataset.community;
-      if (name === "verification") await verification();
-      if (name === "dashboard") await dashboard();
-      if (name === "feedback") await feedback();
+      if (pagePaths[name]) {
+        if (
+          b.tagName === "A" &&
+          (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+        )
+          return;
+        e.preventDefault();
+        return await navigate(
+          pagePaths[name] +
+            (name === "admin" ? "?offset=" + (b.dataset.offset || 0) : ""),
+        );
+      }
       if (name === "testimonial") await testimonial();
-      if (name === "admin") await admin("?offset=" + (b.dataset.offset || 0));
       if (name === "profile") await organizer(b.dataset.id);
       if (name === "edit") await edit(b.dataset.id);
       if (name === "participants") await participants(b.dataset.id);
@@ -209,14 +302,17 @@
     const f = e.target.closest(".community-form");
     if (!f || !c) return;
     e.preventDefault();
+    const originPage = location.pathname,
+      opts = pageOptions();
     const b = f.querySelector("[type=submit]");
     b.disabled = true;
     const d = Object.fromEntries(new FormData(f)),
       action = f.dataset.communityForm;
     try {
       if (action === "feedback-filter") {
-        await admin(
-          "?" + new URLSearchParams(Object.entries(d).filter(([, v]) => v)),
+        await navigate(
+          "/admin?" +
+            new URLSearchParams(Object.entries(d).filter(([, v]) => v)),
         );
         return;
       }
@@ -293,6 +389,8 @@
       }
       const saved = await c.api(path, { method, body });
       await c.refresh();
+      if (location.pathname !== originPage || (opts.valid && !opts.valid()))
+        return;
       c.toast(
         action === "reindex"
           ? `Processed ${saved.processed}; indexed ${saved.indexed}; unresolved ${saved.unresolved}. Unresolved places remain excluded.`
@@ -308,16 +406,21 @@
           "reindex",
         ].includes(action)
       )
-        await admin();
-      else if (action === "verification") await verification();
+        await admin(location.search, opts);
+      else if (action === "verification") await verification(opts);
       else
         frame(
           "Thank you",
           "<p>Your submission has been saved. Reviews and testimonials are subject to the applicable participation and moderation rules.</p>",
+          opts,
         );
       await publicSection();
     } catch (error) {
-      const alert = document.querySelector(".community-error");
+      if (location.pathname !== originPage || (opts.valid && !opts.valid()))
+        return;
+      const alert = document.querySelector(
+        "#modal[open] .community-error, #community-page-content .community-error",
+      );
       if (alert) alert.textContent = error.message;
       else c.toast(error.message);
     } finally {

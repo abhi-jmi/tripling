@@ -197,3 +197,17 @@ JavaScript syntax (`npm run check`), `cfn-lint infra/*.yaml`, shell syntax and d
 whitespace checks passed. This plain JavaScript project has no TypeScript step
 or separate frontend compiler. A new production container build, live Google
 requests, AWS key provisioning and production deployment were not performed.
+
+## Dedicated page URLs
+
+The four Organize menu destinations now render as full pages inside the shared
+header/main/footer shell: `/organizer/dashboard`, `/organizer/verification`,
+`/admin`, and `/feedback`. These URLs can be bookmarked, opened in a new tab,
+loaded directly and refreshed. The server serves only these explicit page paths,
+with root-relative assets and no private data embedded in the HTML. Existing API
+permissions remain unchanged. Guests may open feedback; protected destinations
+prompt for login and resume the requested page afterward. Non-admin direct
+requests cannot load administrator data. Browser back/forward, admin filter query
+parameters, page titles and heading focus are handled by the page router. Slow
+responses from a previous route cannot overwrite the current page. Secondary
+trip actions such as edit/confirmation continue using the existing dialog flow.

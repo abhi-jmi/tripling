@@ -4,6 +4,7 @@
   let pending = null;
   const allowed = new Set([
     "view",
+    "community",
     "save",
     "join",
     "create",
