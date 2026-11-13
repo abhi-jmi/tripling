@@ -76,7 +76,8 @@ let state = {
   requests: {},
   created: [],
 };
-let view = "login",
+let bootReady = false;
+let view = "loading",
   authMode = "login",
   category = "All trips",
   maxBudget = 1000000,
@@ -287,7 +288,10 @@ function renderCommunityPage(title, body) {
 }
 async function renderLocation() {
   const hash = location.hash.slice(1);
-  if (hash === "sso-complete") return completeGoogle().catch(errorMessage);
+  if (hash === "sso-complete") {
+    setView("discover");
+    return completeGoogle().catch(errorMessage);
+  }
   if (hash === "profile" && auth.session) {
     setView("discover");
     return profile();
@@ -552,7 +556,10 @@ function join(id) {
 }
 function create() {
   if (!requireLogin({ type: "create" })) return;
-  if (data.user.organizerVerification !== "approved") {
+  if (
+    data.features?.organizerVerificationRequired &&
+    data.user.organizerVerification !== "approved"
+  ) {
     window.TriplingCommunity.verification().catch(errorMessage);
     return;
   }
@@ -795,6 +802,36 @@ $("#login-form").addEventListener("submit", async (event) => {
 async function handleClick(event) {
   const b = event.target.closest("button,a");
   if (!b || b.disabled) return;
+  if (
+    b.tagName === "A" &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey &&
+    event.button === 0 &&
+    !b.hasAttribute("download") &&
+    (!b.target || b.target === "_self")
+  ) {
+    const url = new URL(b.href);
+    if (
+      url.origin === location.origin &&
+      url.pathname === "/" &&
+      ["#discover", "#past-trips", "#my-trips", "#saved", "#login"].includes(
+        url.hash,
+      )
+    ) {
+      event.preventDefault();
+      if (!bootReady) return;
+      if (
+        location.pathname + location.search + location.hash !==
+        url.pathname + url.search + url.hash
+      )
+        history.pushState(null, "", url.pathname + url.search + url.hash);
+      await renderLocation();
+      window.scrollTo({ top: 0 });
+      return;
+    }
+  }
   if (b.dataset.authMode) {
     setAuthMode(b.dataset.authMode);
     return;
@@ -894,6 +931,7 @@ async function handleClick(event) {
     return;
   }
   const actions = {
+    "retry-startup": () => location.reload(),
     close: closeModal,
     create,
     profile,
@@ -1191,12 +1229,15 @@ document.addEventListener("submit", async (event) => {
     if (button) button.disabled = false;
   }
 });
-window.addEventListener("hashchange", () =>
-  renderLocation().catch(errorMessage),
+window.addEventListener(
+  "hashchange",
+  () => bootReady && renderLocation().catch(errorMessage),
 );
-window.addEventListener("popstate", () => renderLocation().catch(errorMessage));
+window.addEventListener("popstate", () => {
+  if (bootReady) renderLocation().catch(errorMessage);
+});
 window.addEventListener("focus", () => {
-  if (view !== "login") refresh().catch(errorMessage);
+  if (bootReady && view !== "login") refresh().catch(errorMessage);
 });
 async function completeGoogle() {
   const pending = await api("/auth/google/pending");
@@ -1346,6 +1387,7 @@ async function boot() {
   $("#auth-submit").disabled = true;
   try {
     await refresh();
+    bootReady = true;
     await renderLocation();
     if (data.user && auth.pending && location.hash === "#discover")
       await resumeAction();
@@ -1371,17 +1413,16 @@ async function boot() {
       $("#login-error").hidden = false;
       history.replaceState(null, "", location.pathname + location.hash);
     }
+    $("#app-loading").hidden = true;
   } catch (error) {
-    $("#login-error").textContent = error.message;
-    $("#login-error").hidden = false;
-    $("#connection-error").textContent = error.message;
-    $("#connection-error").hidden = false;
-    if (window.TriplingCommunity.hasPath(location.pathname))
-      renderCommunityPage(
-        "Unable to load page",
-        `<p class="community-error" role="alert">${esc(error.message)}</p><a class="secondary" href="${esc(location.pathname + location.search)}">Try again</a>`,
-      );
-    else setView(location.hash.slice(1) || "discover");
+    bootReady = false;
+    $("#app-shell").hidden = true;
+    $("#login-page").hidden = true;
+    document.body.classList.remove("auth-screen");
+    $("#startup-status").textContent =
+      "Unable to load Tripling. " + error.message;
+    $("#startup-retry").hidden = false;
+    $("#app-loading").hidden = false;
   } finally {
     $("#auth-submit").disabled = false;
   }

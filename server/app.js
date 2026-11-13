@@ -1,4 +1,5 @@
 import express from "express";
+import { organizerVerificationEnabled } from "./roles.js";
 import { registerCommunity } from "./community.js";
 import { GENDERS } from "./trip-options.js";
 import { createCityResolver, registerNearbyRoutes } from "./nearby.js";
@@ -86,11 +87,14 @@ export function createApp(
   {
     production = process.env.NODE_ENV === "production",
     publicOrigin = process.env.PUBLIC_ORIGIN,
+    organizerVerificationRequired = organizerVerificationEnabled(),
     googleAdapter = null,
     placesAdapter = createPlacesAutocomplete(),
     cityResolver = createCityResolver(),
   } = {},
 ) {
+  if (typeof organizerVerificationRequired !== "boolean")
+    throw new Error("organizerVerificationRequired must be a boolean.");
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -314,7 +318,12 @@ export function createApp(
     personName,
     googleAdapter,
   });
-  registerCommunity(app, pool, { requireUser, throttle, cityResolver });
+  registerCommunity(app, pool, {
+    requireUser,
+    throttle,
+    cityResolver,
+    organizerVerificationRequired,
+  });
   registerNearbyRoutes(app, pool, { throttle, cityResolver });
   registerTripRoutes(app, pool, {
     requireUser,
@@ -322,6 +331,7 @@ export function createApp(
     publicUser,
     placesAdapter,
     cityResolver,
+    organizerVerificationRequired,
   });
   registerBlockRoutes(app, pool, { requireUser, throttle });
   app.use("/api", (req, res) =>

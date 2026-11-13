@@ -18,7 +18,24 @@
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
-    <section id="login-page" class="login-page" aria-labelledby="login-title">
+    <section id="app-loading" class="app-loading" aria-label="Loading Tripling">
+      <p id="startup-status" role="status">Loading Tripling…</p>
+      <button
+        id="startup-retry"
+        class="secondary"
+        data-action="retry-startup"
+        hidden
+      >
+        Try again
+      </button>
+    </section>
+    <noscript>Enable JavaScript to use Tripling.</noscript>
+    <section
+      id="login-page"
+      class="login-page"
+      aria-labelledby="login-title"
+      hidden
+    >
       <div class="login-story">
         <a class="brand login-brand" href="#discover" aria-label="Tripling home"
           ><span class="brand-icon" data-icon="mountain"></span>tripling<span

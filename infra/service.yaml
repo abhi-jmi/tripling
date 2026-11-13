@@ -1,6 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling HTTPS frontend and API on ECS Fargate. No resources are created until explicitly deployed.
 Parameters:
+  OrganizerVerificationRequired:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Beta defaults to open organizing; true restores organizer approval requirements
   AdminUserIds:
     Type: String
     Default: ""
@@ -259,6 +264,8 @@ Resources:
           PortMappings:
             - ContainerPort: 3000
           Environment:
+            - Name: ORGANIZER_VERIFICATION_REQUIRED
+              Value: !Ref OrganizerVerificationRequired
             - Name: TRIPLING_ADMIN_USER_IDS
               Value: !Ref AdminUserIds
             - Name: VERIFICATION_KEY_SECRET_ARN

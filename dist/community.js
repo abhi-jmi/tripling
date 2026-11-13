@@ -93,6 +93,14 @@
   ];
   async function verification(opts = {}) {
     if (!c.login(pagePaths.verification)) return;
+    if (!c.data().features?.organizerVerificationRequired) {
+      frame(
+        "Organizer verification",
+        `<div class="verification-preview"><div class="verification-preview-background" inert aria-hidden="true"><p>Status: Not submitted</p><p>Approval reflects an organizer application review, not a guarantee of safety. Do not submit Aadhaar, passport or other government identity documents. A business or experience reference is sufficient.</p><div class="community-form">${field("name", "Organizer or business name", "")}${field("contact", "Private contact details", "")}${message("experience", "Travel organizing experience and references", "", 30)}</div></div><div class="verification-coming-soon" role="status"><span>Coming soon</span></div></div>`,
+        opts,
+      );
+      return;
+    }
     const r = await c.api("/organizer/verification");
     frame(
       "Organizer verification",
@@ -105,7 +113,7 @@
     const r = await c.api("/organizer/dashboard");
     frame(
       "Organizer dashboard",
-      `<p>Verification: ${esc(r.verification)} <button class="secondary" data-community="verification">Apply / view status</button></p><div class="community-stats">${Object.entries(
+      `${c.data().features?.organizerVerificationRequired ? `<p>Verification: ${esc(r.verification)} <button class="secondary" data-community="verification">Apply / view status</button></p>` : `<p>Organizer verification: coming soon. <button class="secondary" data-community="verification">Learn more</button></p>`}<div class="community-stats">${Object.entries(
         r.stats,
       )
         .map(([k, v]) => `<span><strong>${v}</strong> ${esc(k)}</span>`)

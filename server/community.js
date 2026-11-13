@@ -88,7 +88,7 @@ export function decryptDocument(
 export function registerCommunity(
   app,
   pool,
-  { requireUser, throttle, cityResolver },
+  { requireUser, throttle, cityResolver, organizerVerificationRequired },
 ) {
   const admin = (req, res, next) =>
     isAdmin(req.user)
@@ -124,6 +124,8 @@ export function registerCommunity(
     });
   });
   app.post("/api/organizer/verification", requireUser, async (req, res) => {
+    if (!organizerVerificationRequired)
+      fail(409, "Organizer verification is coming soon.");
     await throttle(req, `verification:${req.user.id}`, 5);
     const data = z
       .object({
@@ -377,7 +379,7 @@ export function registerCommunity(
       if (t.organizer_id !== req.user.id)
         fail(403, "Only this organizer can edit the trip.");
       await lockTravelers(db, [req.user.id]);
-      await requireVerified(db, req.user.id);
+      await requireVerified(db, req.user.id, organizerVerificationRequired);
       if (
         t.status !== "open" ||
         t.starts_on < travelDate() ||
@@ -428,7 +430,7 @@ export function registerCommunity(
         );
       if (!isAdmin(req.user)) {
         await lockTravelers(db, [req.user.id]);
-        await requireVerified(db, req.user.id);
+        await requireVerified(db, req.user.id, organizerVerificationRequired);
       }
       if (t.status !== "open" || t.ends_on < travelDate())
         fail(409, "This trip cannot be canceled.");
@@ -473,7 +475,7 @@ export function registerCommunity(
           fail(409, "The organizer must use the leave/handover workflow.");
         if (!isAdmin(req.user)) {
           await lockTravelers(db, [req.user.id]);
-          await requireVerified(db, req.user.id);
+          await requireVerified(db, req.user.id, organizerVerificationRequired);
           if (canCancelParticipation(t) !== true)
             fail(
               409,

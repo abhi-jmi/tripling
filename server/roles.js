@@ -6,9 +6,16 @@ export const isAdmin = (user) =>
     .includes(user.id);
 export const verifiedOrganizer = (user) =>
   user?.organizer_verification === "approved";
-export async function requireVerified(db, id) {
+export function organizerVerificationEnabled(
+  value = process.env.ORGANIZER_VERIFICATION_REQUIRED ?? "false",
+) {
+  if (!["true", "false"].includes(value))
+    throw new Error("ORGANIZER_VERIFICATION_REQUIRED must be true or false.");
+  return value === "true";
+}
+export async function requireVerified(db, id, required = true) {
   const user = await db.one("users", { id });
-  if (!verifiedOrganizer(user))
+  if (!user || (required && !verifiedOrganizer(user)))
     throw Object.assign(
       new Error(
         "Organizer verification approval is required before publishing or managing trips.",

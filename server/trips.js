@@ -167,7 +167,14 @@ async function crewLocks(db, id, user) {
 export function registerTripRoutes(
   app,
   pool,
-  { requireUser, throttle, publicUser, placesAdapter, cityResolver },
+  {
+    requireUser,
+    throttle,
+    publicUser,
+    placesAdapter,
+    cityResolver,
+    organizerVerificationRequired,
+  },
 ) {
   app.get("/api/locations", async (req, res) => {
     const q = z
@@ -355,11 +362,12 @@ export function registerTripRoutes(
         name: people.get(b.blocked_id)?.display_name || "Former traveler",
       }));
     }
+    result.features = { organizerVerificationRequired };
     res.json(result);
   });
   app.post("/api/trips", requireUser, async (req, res) => {
     requireNames(req);
-    await requireVerified(pool, req.user.id);
+    await requireVerified(pool, req.user.id, organizerVerificationRequired);
     await throttle(req, `create:${req.user.id}`, 30);
     const d = tripSchema.parse(req.body);
     if (!req.user.adult_confirmed)
@@ -409,7 +417,7 @@ export function registerTripRoutes(
     );
     const id = await transaction(pool, async (db) => {
       await lockTravelers(db, [req.user.id]);
-      await requireVerified(db, req.user.id);
+      await requireVerified(db, req.user.id, organizerVerificationRequired);
       const t = await db.insert("trips", {
         id: newId,
         starting_location: {
@@ -622,7 +630,7 @@ export function registerTripRoutes(
       if (t.organizer_id !== req.user.id)
         fail(403, "Only the current organizer can review requests.");
       await lockTravelers(db, [req.user.id]);
-      await requireVerified(db, req.user.id);
+      await requireVerified(db, req.user.id, organizerVerificationRequired);
       if (t.status !== "open" || t.ends_on < travelDate())
         fail(409, "This trip is no longer accepting travelers.");
       const request = await db.one("join_requests", {
