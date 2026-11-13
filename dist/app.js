@@ -501,12 +501,6 @@ function render() {
   const unread = data.notifications.filter((n) => !n.read_at).length;
   $("#notification-count").hidden = !unread;
   $("#notification-count").textContent = unread;
-  const hosts = [
-    ...new Map(data.trips.map((t) => [t.ownerId, t.initials])).values(),
-  ].slice(0, 3);
-  $(".avatar-stack").innerHTML = hosts.length
-    ? hosts.map((name) => `<span>${esc(name)}</span>`).join("")
-    : `<span>${icon("users")}</span>`;
   icons($("#trip-grid"));
 }
 async function detail(id) {
