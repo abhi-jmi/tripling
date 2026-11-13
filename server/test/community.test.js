@@ -75,6 +75,7 @@ test("community authorization, verified publishing, moderation and private data"
   });
   const app = createApp(pool, {
       production: false,
+      organizerVerificationRequired: true,
       cityResolver: async (name, placeId) => ({
         latitude:
           name === "Kullu"

@@ -3588,3 +3588,47 @@ body.auth-screen {
   padding: 9px 12px;
   font: inherit;
 }
+
+/* Resolve the saved session before displaying either account or app screens. */
+.app-loading {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  gap: 16px;
+  text-align: center;
+  color: var(--green);
+}
+.verification-preview {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 12px;
+  min-height: 320px;
+}
+.verification-preview-background {
+  filter: blur(5px);
+  opacity: 0.5;
+  padding: 20px;
+  user-select: none;
+  pointer-events: none;
+}
+.verification-coming-soon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #faf9f54d;
+}
+.verification-coming-soon span {
+  padding: 18px 28px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--green);
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 600;
+  box-shadow: 0 8px 24px #24483e0d;
+}

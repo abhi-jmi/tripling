@@ -10,7 +10,7 @@ existing Node.js/Express/MongoDB stack. It is not automatically deployed.
   approve their own application. References/contact/experience are required;
   supporting business/experience documents are optional. Do not request or upload
   government IDs. An approval is not KYC certification or a safety guarantee.
-- New trip creation and join-request management require an approved organizer.
+- When the approval switch is enabled, new trip creation and join-request management require an approved organizer. Beta defaults to open organizing.
   Existing organizers are **not auto-approved**. Their existing public trip and
   participation records remain. Dashboard: counts, own trips, requests, active
   participants, limited editing and cancellation with reasons. Route/date/group
@@ -211,3 +211,42 @@ requests cannot load administrator data. Browser back/forward, admin filter quer
 parameters, page titles and heading focus are handled by the page router. Slow
 responses from a previous route cannot overwrite the current page. Secondary
 trip actions such as edit/confirmation continue using the existing dialog flow.
+
+## Beta organizer approval switch
+
+`ORGANIZER_VERIFICATION_REQUIRED=false` (also the default when unset) lets
+signed-in adults with complete names organize and manage their own trips without
+an approval. Authentication, ownership, group eligibility, departure validation,
+capacity, blocks, cancellation limits, admin permissions and audit records remain
+enforced. No existing account is auto-approved and verified badges still require
+an actual approval.
+
+The server exposes this setting through `/api/bootstrap` under
+`features.organizerVerificationRequired`. The create-trip UI uses the same setting.
+In beta, the verification page shows an inert, blurred preview under “Coming soon”;
+new verification submissions return 409. Existing applications, private evidence,
+admin review routes and approvals are retained.
+
+Set `ORGANIZER_VERIFICATION_REQUIRED=true` and restart/redeploy to restore the
+application form and approval requirements for creation, editing, join decisions,
+organizer cancellation and member removal. Invalid flag values fail startup
+instead of silently selecting a mode. The flag is captured when the app starts;
+changing a browser payload or the public bootstrap response cannot bypass it.
+
+In AWS, `infra/service.yaml` provides the `OrganizerVerificationRequired` parameter.
+`scripts/deploy-aws.sh` accepts the same `ORGANIZER_VERIFICATION_REQUIRED` environment
+variable and preserves an existing parameter when it is omitted. To change modes,
+run the infrastructure deployment from the current main checkout with the desired
+flag and your existing deployment settings. Ordinary `deploy-release.sh` releases
+preserve the running task's configured flag; existing tasks without a flag use
+this release's beta default. Neither setting deletes verification records.
+
+## Session restoration and home navigation
+
+Both login and app screens start hidden behind a neutral loading state until the
+cookie-backed bootstrap request completes. The URL selects the restored view,
+including saved/my trips and dedicated organizer pages. Failed bootstrap requests
+show a retry state and retain the URL instead of presenting a false logout.
+Home and main-view links use history navigation within the app; modified clicks
+and new tabs retain normal link behavior. Private routes still require a real
+session, and explicit login remains available.
