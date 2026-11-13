@@ -1216,6 +1216,16 @@ dialog::backdrop {
 .modal-actions .primary {
   flex: 1;
 }
+.profile-account-actions {
+  align-items: center;
+}
+.profile-account-actions [data-directory] {
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.profile-account-actions [data-directory]:hover {
+  background-color: #f0f3eb;
+  border-color: #b9c5ae;
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
