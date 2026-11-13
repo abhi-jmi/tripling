@@ -77,12 +77,12 @@
         `<div class="modal-pad"><h2 id="modal-title">${title}</h2><p class="community-error" role="alert"></p>${body}</div>`,
       );
   };
-  const form = (action, body) =>
-    `<form class="community-form" data-community-form="${action}">${body}<button class="primary" type="submit">Submit</button></form>`;
+  const form = (action, body, label = "Submit") =>
+    `<form class="community-form" data-community-form="${action}">${body}<button class="primary" type="submit">${esc(label)}</button></form>`;
   const hidden = (name, value) =>
     `<input type="hidden" name="${name}" value="${esc(value)}">`;
-  const message = (name, label, value = "", min = 10) =>
-    `<label class="form-field">${label}<textarea name="${name}" minlength="${min}" maxlength="4000" ${min > 0 ? "required" : ""}>${esc(value)}</textarea></label>`;
+  const message = (name, label, value = "", min = 10, max = 4000) =>
+    `<label class="form-field">${label}<textarea name="${name}" minlength="${min}" maxlength="${max}" ${min > 0 ? "required" : ""}>${esc(value)}</textarea></label>`;
   const categories = [
     "General Feedback",
     "Suggestion",
@@ -108,6 +108,48 @@
       opts,
     );
   }
+  const tripDay = (day) =>
+    new Date(day + "T12:00:00Z").toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  const price = (amount) => "₹" + Number(amount).toLocaleString("en-IN");
+  function dashboardTrip(t, r) {
+    const members = r.members.filter((m) => m.trip_id === t.id).length;
+    const pending = r.requests.filter(
+      (v) => v.trip_id === t.id && v.status === "pending",
+    ).length;
+    const day =
+      c.data().today ||
+      new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const status =
+      t.status === "canceled"
+        ? "Cancelled"
+        : t.ends_on < day
+          ? "Completed"
+          : t.starts_on > day
+            ? "Upcoming"
+            : "In progress";
+    const editable =
+      t.status === "open" &&
+      t.starts_on >= day &&
+      (!t.departure_utc || new Date(t.departure_utc) > new Date());
+    const spots = Math.max(0, t.capacity - t.existing_travelers - members + 1);
+    const cityImage = {
+      goa: "goa",
+      rishikesh: "rishikesh",
+      udaipur: "udaipur",
+      manali: "manali",
+    }[t.destination.toLowerCase().split(",")[0].trim()];
+    const image =
+      cityImage ||
+      (["goa", "rishikesh", "udaipur", "manali", "mountains"].includes(t.image)
+        ? t.image
+        : "manali");
+    return `<article class="organizer-trip-card"><img class="organizer-trip-image" src="assets/${image}.jpg" alt="${esc(t.destination)} travel inspiration" loading="lazy"><div class="organizer-trip-body"><div class="organizer-trip-heading"><span class="organizer-trip-style">${esc(t.category)}</span><span class="organizer-trip-status ${status === "Cancelled" ? "is-cancelled" : status === "Completed" ? "is-completed" : ""}">${status}</span></div><h3>${esc(t.title)}</h3><p class="organizer-trip-route">${esc(t.from_city)} <span aria-hidden="true">→</span> ${esc(t.destination)}</p><div class="organizer-trip-facts"><span>${tripDay(t.starts_on)} – ${tripDay(t.ends_on)}</span><span>${members} registered · ${spots} spots open</span><span>${price(t.budget_min)}–${price(t.budget_max)} / person</span></div><div class="organizer-trip-actions"><button class="secondary trip-action-view" data-trip="${esc(t.id)}">View trip</button><button class="secondary trip-action-requests" data-incoming="${esc(t.id)}">Join requests${pending ? ` (${pending})` : ""}</button><button class="secondary trip-action-edit" data-community="edit" data-id="${esc(t.id)}" ${editable ? "" : 'disabled title="Only trips that have not departed can be edited"'}>Edit</button><button class="secondary trip-action-participants" data-community="participants" data-id="${esc(t.id)}">Participants</button><button class="secondary trip-action-cancel" data-community="cancel" data-id="${esc(t.id)}" ${t.status === "open" && t.ends_on >= day ? "" : "disabled"}>Cancel trip</button></div></div></article>`;
+  }
   async function dashboard(opts = {}) {
     if (!c.login(pagePaths.dashboard)) return;
     const r = await c.api("/organizer/dashboard");
@@ -119,7 +161,7 @@
         .map(([k, v]) => `<span><strong>${v}</strong> ${esc(k)}</span>`)
         .join(
           "",
-        )}</div><button class="primary" data-action="create">Create trip</button><button class="secondary" data-community="profile" data-id="${esc(c.data().user.id)}">Organizer profile & reviews</button>${r.trips.map((t) => `<article class="request-item"><h3>${esc(t.title)}</h3><p>${esc(t.from_city)} → ${esc(t.destination)} · ${esc(t.starts_on)} · ${esc(t.status)}</p><div class="modal-actions"><button class="secondary" data-trip="${t.id}">View trip</button><button class="secondary" data-incoming="${t.id}">Join requests</button><button class="secondary" data-community="edit" data-id="${t.id}">Edit</button><button class="secondary" data-community="participants" data-id="${t.id}">Participants</button><button class="secondary" data-community="cancel" data-id="${t.id}">Cancel trip</button></div></article>`).join("") || "<p>You have no organized trips yet.</p>"}`,
+        )}</div><button class="organizer-profile-link" data-community="profile" data-id="${esc(c.data().user.id)}"><span><strong>Organizer profile & reviews</strong><small>Your public profile and feedback from fellow travelers</small></span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6h12v12" /></svg></button><div class="organizer-trips-title"><h2>Your organized trips</h2><p>Your plans, people and next steps in one place.</p></div><div class="organizer-trip-list">${r.trips.map((t) => dashboardTrip(t, r)).join("") || '<p class="organizer-trips-empty">No organized trips yet. Start your first plan with Create a trip in the header.</p>'}</div>`,
       opts,
     );
   }
@@ -127,32 +169,115 @@
     const r = await c.api("/organizer/dashboard"),
       t = r.trips.find((t) => t.id === id);
     if (!t) throw Error("Trip is not managed by you.");
+    const count = r.members.filter((m) => m.trip_id === id).length;
+    const going = t.existing_travelers + count - 1;
+    const zone = t.departure_timezone || "Asia/Kolkata";
+    const departureTime = t.departure_utc
+      ? new Intl.DateTimeFormat("en-GB", {
+          timeZone: zone,
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        }).format(new Date(t.departure_utc))
+      : "12:00";
+    const input = (name, label, value, type = "text", attrs = "") =>
+      `<label class="form-field">${label}<input name="${name}" type="${type}" value="${esc(value)}" ${attrs} required></label>`;
     frame(
-      "Edit upcoming trip",
+      "Edit trip",
       form(
         "edit",
         hidden("id", id) +
-          field("title", "Title", t.title) +
-          message("description", "Description", t.description, 25) +
-          message("plan", "Itinerary", t.plan || "Flexible itinerary", 0) +
+          hidden("revision", t.revision || 0) +
+          `<div class="form-grid">` +
+          input(
+            "title",
+            "Give your trip a name",
+            t.title,
+            "text",
+            'maxlength="65"',
+          ) +
+          input(
+            "from",
+            "Starting from",
+            t.from_city,
+            "text",
+            `data-location data-place-id="${esc(t.from_place_id || "")}" maxlength="60"`,
+          ) +
+          input(
+            "destination",
+            "Destination",
+            t.destination,
+            "text",
+            `data-location data-place-id="${esc(t.destination_place_id || "")}" maxlength="60"`,
+          ) +
+          input("start", "Departure", t.starts_on, "date") +
+          input("departureTime", "Departure time", departureTime, "time") +
+          input(
+            "timeZone",
+            "Departure time zone",
+            zone,
+            "text",
+            'maxlength="80"',
+          ) +
+          input("end", "Return", t.ends_on, "date") +
+          input(
+            "min",
+            "Minimum budget / person (₹)",
+            t.budget_min,
+            "number",
+            'min="0" max="1000000"',
+          ) +
+          input(
+            "max",
+            "Maximum budget / person (₹)",
+            t.budget_max,
+            "number",
+            'min="0" max="1000000"',
+          ) +
+          input(
+            "going",
+            "Already going (including registered participants)",
+            going,
+            "number",
+            `min="${Math.max(1, count)}" max="20"`,
+          ) +
+          input(
+            "seats",
+            "Open spots",
+            Math.max(0, t.capacity - going),
+            "number",
+            'min="0" max="19"',
+          ) +
+          `<label class="form-field">Travel style<select name="category">${options([...c.data().options.travelStyles, ...c.data().options.legacyStyles], t.category)}</select></label><label class="form-field">Travel mode<select name="mode">${options(["Bus", "Train", "Shared cab", "Self-drive", "Flight"], t.mode)}</select></label><label class="form-field full">Who can request to join?<select name="group" required>${c
+            .data()
+            .options.groups.map(
+              (g) =>
+                `<option value="${g.value}" ${(t.group_eligibility || (t.women_only ? "women" : "mixed")) === g.value ? "selected" : ""}>${esc(g.label)}</option>`,
+            )
+            .join("")}</select></label></div>` +
+          message(
+            "description",
+            "Tell us about the plan",
+            t.description,
+            25,
+            1200,
+          ) +
+          message(
+            "plan",
+            "A loose itinerary (optional)",
+            t.plan || "",
+            0,
+            2000,
+          ) +
           message(
             "rules",
-            "Group rules",
-            t.rules || "Respect fellow travelers.",
+            "Group ground rules (optional)",
+            t.rules || "",
             0,
+            1200,
           ) +
-          `<label class="form-field">Travel style<select name="category">${options([...c.data().options.travelStyles, ...c.data().options.legacyStyles], t.category)}</select></label>` +
-          field(
-            "departureUtc",
-            "Departure (UTC, include Z)",
-            t.departure_utc || "",
-          ) +
-          field(
-            "timeZone",
-            "Display time zone",
-            t.departure_timezone || "Asia/Kolkata",
-          ) +
-          `<p>Route, dates, eligibility and capacity stay fixed to protect accepted participants. Departure time must fall on the existing departure date in the specified time zone. Members will be notified.</p>`,
+          '<label class="check-label"><input type="checkbox" name="adult" required> I am 18 or older. I’ll use public meeting points and respect travelers’ privacy.</label><p class="notice">Times use the departure time zone above. Registered participants stay in the trip and cannot be excluded by capacity or eligibility changes. Members and pending applicants will be notified of changes.</p>',
+        "Save trip",
       ),
     );
   }
@@ -180,7 +305,7 @@
         );
     frame(
       esc(r.name),
-      `<p>${r.verified ? "✓ Verified Organizer" : "Organizer application not approved"}</p><p>${esc(r.bio)}</p><p>${r.average ? r.average.toFixed(1) + "/5" : "No ratings yet"} · ${r.total} reviews</p><p>${r.distribution.map((n, i) => `${i + 1} stars: ${n}`).join(" · ")}</p>${r.reviews.map((v) => `<article class="request-item"><strong>${v.rating}/5 · ${esc(v.author_name)}</strong><p>${esc(v.body)}</p><small>${esc(v.trip_title)}</small></article>`).join("")}${trips.length ? form("organizer-review", `<label class="form-field">Completed trip<select name="tripId">${trips.map((t) => `<option value="${t.id}">${esc(t.title)}</option>`).join("")}</select></label><label class="form-field">Stars<select name="rating">${options(["5", "4", "3", "2", "1"])}</select></label>` + message("body", "Your review")) : ""}`,
+      `${c.data().features?.organizerVerificationRequired ? `<p>${r.verified ? "✓ Verified Organizer" : "Organizer application not approved"}</p>` : ""}<p>${esc(r.bio)}</p><p>${r.average ? r.average.toFixed(1) + "/5" : "No ratings yet"} · ${r.total} reviews</p><p>${r.distribution.map((n, i) => `${i + 1} stars: ${n}`).join(" · ")}</p>${r.reviews.map((v) => `<article class="request-item"><strong>${v.rating}/5 · ${esc(v.author_name)}</strong><p>${esc(v.body)}</p><small>${esc(v.trip_title)}</small></article>`).join("")}${trips.length ? form("organizer-review", `<label class="form-field">Completed trip<select name="tripId">${trips.map((t) => `<option value="${t.id}">${esc(t.title)}</option>`).join("")}</select></label><label class="form-field">Stars<select name="rating">${options(["5", "4", "3", "2", "1"])}</select></label>` + message("body", "Your review")) : ""}`,
     );
   }
   async function admin(query = "", opts = {}) {
@@ -346,14 +471,33 @@
       if (action === "edit") {
         path = "/organizer/trips/" + d.id;
         method = "PATCH";
+        if (!f.elements.from.dataset.placeId)
+          throw Error("Select a starting city from the location suggestions.");
         body = {
           title: d.title,
+          from: d.from,
+          fromPlaceId: f.elements.from.dataset.placeId,
+          destination: d.destination,
+          ...(f.elements.destination.dataset.placeId
+            ? { destinationPlaceId: f.elements.destination.dataset.placeId }
+            : {}),
+          start: d.start,
+          end: d.end,
+          departureTime: d.departureTime,
+          timeZone: d.timeZone,
+          min: +d.min,
+          max: +d.max,
+          going: +d.going,
+          seats: +d.seats,
+          category: d.category,
+          mode: d.mode,
+          groupEligibility: d.group,
+          women: d.group === "women",
           description: d.description,
           plan: d.plan,
           rules: d.rules,
-          category: d.category,
-          departureUtc: d.departureUtc,
-          timeZone: d.timeZone,
+          age: !!d.adult,
+          revision: +d.revision,
         };
       }
       if (action === "cancel") path = "/organizer/trips/" + d.id + "/cancel";
@@ -405,6 +549,14 @@
           : "Saved successfully.",
       );
       if (
+        ["edit", "cancel", "remove"].includes(action) &&
+        originPage === pagePaths.dashboard
+      ) {
+        c.close();
+        await dashboard(opts);
+        return;
+      }
+      if (
         [
           "decision",
           "feedback-update",
@@ -426,9 +578,9 @@
     } catch (error) {
       if (location.pathname !== originPage || (opts.valid && !opts.valid()))
         return;
-      const alert = document.querySelector(
-        "#modal[open] .community-error, #community-page-content .community-error",
-      );
+      const alert =
+        document.querySelector("#modal[open] .community-error") ||
+        document.querySelector("#community-page-content .community-error");
       if (alert) alert.textContent = error.message;
       else c.toast(error.message);
     } finally {

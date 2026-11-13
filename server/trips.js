@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { tripSchema } from "./trip-input.js";
 import { indexTripLocation } from "./geo-index.js";
 import { randomUUID } from "node:crypto";
 import {
@@ -6,13 +7,7 @@ import {
   canCancelParticipation,
   cancellationMessage,
 } from "./roles.js";
-import {
-  TRAVEL_STYLES,
-  LEGACY_STYLES,
-  groupOf,
-  eligibleForGroup,
-  tripOptions,
-} from "./trip-options.js";
+import { groupOf, eligibleForGroup, tripOptions } from "./trip-options.js";
 import { transaction, lockTrip, lockTravelers } from "./db.js";
 import {
   travelDate,
@@ -29,47 +24,6 @@ const fail = (s, m) => {
   throw httpError(s, m);
 };
 const uuid = z.uuid();
-const tripSchema = z
-  .object({
-    title: z.string().trim().min(3).max(65),
-    from: z.string().trim().min(1).max(60),
-    destination: z.string().trim().min(1).max(60),
-    destinationPlaceId: z
-      .string()
-      .regex(/^[a-zA-Z0-9_-]{1,250}$/)
-      .optional(),
-    start: z.iso.date(),
-    departureUtc: z.iso.datetime({ offset: true }),
-    timeZone: z.string().max(80),
-    end: z.iso.date(),
-    min: z.number().int().min(0).max(1000000),
-    max: z.number().int().min(0).max(1000000),
-    going: z.number().int().min(1).max(19),
-    seats: z.number().int().min(1).max(19),
-    category: z.enum([...TRAVEL_STYLES, ...LEGACY_STYLES]),
-    groupEligibility: z.enum(["men", "women", "mixed"]).optional(),
-    fromPlaceId: z
-      .string()
-      .regex(
-        /^[a-zA-Z0-9_-]{1,250}$/,
-        "Select a starting city from the location suggestions.",
-      ),
-    mode: z.enum(["Bus", "Train", "Shared cab", "Self-drive", "Flight"]),
-    description: z.string().trim().min(25).max(1200),
-    plan: z.string().trim().max(2000).default(""),
-    rules: z.string().trim().max(1200).default(""),
-    women: z.boolean().default(false),
-    age: z.literal(true),
-  })
-  .refine((t) => t.end >= t.start, {
-    message: "Return date must be on or after departure.",
-  })
-  .refine((t) => t.max >= t.min, {
-    message: "Maximum budget must be at least the minimum.",
-  })
-  .refine((t) => t.going + t.seats <= 20, {
-    message: "Groups can have at most 20 travelers.",
-  });
 function serialize(t) {
   const lifecycle =
     t.status === "canceled"
@@ -266,6 +220,7 @@ export function registerTripRoutes(
           organizer_rating: repMap.get(t.organizer_id)?.average,
           organizer_review_count: repMap.get(t.organizer_id)?.count,
           host_verified:
+            organizerVerificationRequired &&
             users.get(t.organizer_id)?.organizer_verification === "approved",
           host:
             users.get(t.organizer_id)?.display_name || "No active organizer",
