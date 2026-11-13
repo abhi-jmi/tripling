@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { editableTripSchema, tripPatchSchema } from "./trip-input.js";
+import { departureFromLocalTime } from "./trip-time.js";
 import { indexTripLocation } from "./geo-index.js";
 import {
   createCipheriv,
@@ -14,12 +16,7 @@ import {
   reviewEligible,
   removeMember,
 } from "./travel-rules.js";
-import {
-  TRAVEL_STYLES,
-  LEGACY_STYLES,
-  eligibleForGroup,
-  groupOf,
-} from "./trip-options.js";
+import { eligibleForGroup, groupOf } from "./trip-options.js";
 const fail = (s, m) => {
     throw httpError(s, m);
   },
@@ -357,62 +354,240 @@ export function registerCommunity(
   });
   app.patch("/api/organizer/trips/:id", requireUser, async (req, res) => {
     const tripId = id.parse(req.params.id),
-      data = z
-        .object({
-          title: text(3, 65),
-          description: text(25, 1200),
-          plan: text(0, 2000),
-          rules: text(0, 1200),
-          category: z.enum([...TRAVEL_STYLES, ...LEGACY_STYLES]),
-          departureUtc: z.iso.datetime({ offset: true }),
-          timeZone: text(1, 80),
-        })
-        .parse(req.body);
+      patch = tripPatchSchema.parse(req.body);
+    const snapshot = await pool.one("trips", { id: tripId });
+    if (!snapshot) fail(404, "Trip not found.");
+    if (snapshot.organizer_id !== req.user.id)
+      fail(403, "Only this organizer can edit the trip.");
+    await requireVerified(pool, req.user.id, organizerVerificationRequired);
+    if (!req.user.adult_confirmed)
+      fail(403, "Confirm your 18+ profile before managing a trip.");
+    await throttle(req, `edit:${req.user.id}`, 30);
+    const revision = snapshot.revision || 0;
+    if (patch.revision !== undefined && patch.revision !== revision)
+      fail(
+        409,
+        "This trip changed since you opened it. Reload the dashboard before editing.",
+      );
+    const initialMembers = await pool.all("trip_members", { trip_id: tripId });
+    const group =
+      patch.groupEligibility ??
+      (patch.women === undefined
+        ? groupOf(snapshot)
+        : patch.women
+          ? "women"
+          : "mixed");
+    const merged = {
+      title: snapshot.title,
+      from: snapshot.from_city,
+      fromPlaceId: snapshot.from_place_id,
+      destination: snapshot.destination,
+      destinationPlaceId: snapshot.destination_place_id,
+      start: snapshot.starts_on,
+      end: snapshot.ends_on,
+      departureUtc: snapshot.departure_utc
+        ? new Date(snapshot.departure_utc).toISOString()
+        : undefined,
+      timeZone: snapshot.departure_timezone || "Asia/Kolkata",
+      min: snapshot.budget_min,
+      max: snapshot.budget_max,
+      going: snapshot.existing_travelers + initialMembers.length - 1,
+      seats:
+        snapshot.capacity -
+        snapshot.existing_travelers -
+        initialMembers.length +
+        1,
+      category: snapshot.category,
+      mode: snapshot.mode,
+      description: snapshot.description,
+      plan: snapshot.plan || "",
+      rules: snapshot.rules || "",
+      age: true,
+      ...patch,
+      groupEligibility: group,
+      women: group === "women",
+    };
+    if (
+      patch.destination !== undefined &&
+      patch.destination !== snapshot.destination &&
+      patch.destinationPlaceId === undefined
+    )
+      merged.destinationPlaceId = undefined;
+    if (patch.departureTime)
+      merged.departureUtc = departureFromLocalTime(
+        merged.start,
+        patch.departureTime,
+        merged.timeZone,
+      ).toISOString();
+    const data = editableTripSchema.parse(merged);
+    const departure = new Date(data.departureUtc);
     try {
-      new Intl.DateTimeFormat("en", { timeZone: data.timeZone }).format();
-    } catch {
-      fail(400, "Choose a valid time zone.");
+      if (
+        new Intl.DateTimeFormat("en-CA", { timeZone: data.timeZone }).format(
+          departure,
+        ) !== data.start
+      )
+        fail(400, "Departure time must match the trip date in its time zone.");
+    } catch (error) {
+      if (error.status) throw error;
+      fail(400, "Choose a valid departure time and time zone.");
     }
+    if (data.start < travelDate() || departure <= new Date())
+      fail(400, "Departure must be in the future.");
+    const routeChanged =
+      data.from !== snapshot.from_city ||
+      data.fromPlaceId !== snapshot.from_place_id ||
+      data.destination !== snapshot.destination ||
+      data.destinationPlaceId !== snapshot.destination_place_id;
+    if (routeChanged && !data.fromPlaceId)
+      fail(400, "Select a starting city from the location suggestions.");
+    const indexed = routeChanged
+      ? await indexTripLocation(
+          { update: async () => {} },
+          {
+            id: tripId,
+            from_city: data.from,
+            from_place_id: data.fromPlaceId,
+            destination: data.destination,
+            destination_place_id: data.destinationPlaceId,
+          },
+          { resolver: cityResolver, requiredOrigin: true },
+        )
+      : null;
     await transaction(pool, async (db) => {
       const t = await lockTrip(db, tripId);
       if (!t) fail(404, "Trip not found.");
       if (t.organizer_id !== req.user.id)
         fail(403, "Only this organizer can edit the trip.");
-      await lockTravelers(db, [req.user.id]);
-      await requireVerified(db, req.user.id, organizerVerificationRequired);
+      if ((t.revision || 0) !== revision)
+        fail(
+          409,
+          "This trip was edited by another request. Reload the dashboard.",
+        );
       if (
         t.status !== "open" ||
         t.starts_on < travelDate() ||
-        new Date(data.departureUtc) <= new Date()
+        (t.departure_utc && new Date(t.departure_utc) <= new Date())
       )
-        fail(409, "Only upcoming open trips can be edited.");
+        fail(409, "Only trips that have not departed can be edited.");
+      const members = await db.all("trip_members", { trip_id: tripId });
       if (
-        new Intl.DateTimeFormat("en-CA", { timeZone: data.timeZone }).format(
-          new Date(data.departureUtc),
-        ) !== t.starts_on
+        JSON.stringify(members.map((m) => m.user_id).sort()) !==
+        JSON.stringify(initialMembers.map((m) => m.user_id).sort())
       )
-        fail(400, "Departure time must match the existing trip date.");
+        fail(
+          409,
+          "The participant list changed while editing. Reload the dashboard before saving.",
+        );
+      await lockTravelers(
+        db,
+        members.map((m) => m.user_id),
+      );
+      await requireVerified(db, req.user.id, organizerVerificationRequired);
+      const travelers = await db.all("users", {
+        id: { $in: members.map((m) => m.user_id) },
+      });
+      if (
+        group !== groupOf(t) &&
+        (travelers.length !== members.length ||
+          travelers.some((u) => !eligibleForGroup(group, u.gender)))
+      )
+        fail(
+          409,
+          "This group would exclude a registered participant. Choose a group everyone can join.",
+        );
+      if (data.going < members.length)
+        fail(
+          409,
+          "Already going cannot be less than the registered participant count.",
+        );
+      const existingTravelers = data.going - members.length + 1;
+      const changes = {
+        title: data.title,
+        description: data.description,
+        plan: data.plan,
+        rules: data.rules,
+        category: data.category,
+        mode: data.mode,
+        from_city: indexed?.record.origin_city || data.from,
+        destination: indexed?.record.destination_city || data.destination,
+        from_place_id: data.fromPlaceId,
+        destination_place_id: data.destinationPlaceId,
+        starts_on: data.start,
+        ends_on: data.end,
+        departure_utc: departure,
+        departure_timezone: data.timeZone,
+        budget_min: data.min,
+        budget_max: data.max,
+        existing_travelers: existingTravelers,
+        capacity: data.going + data.seats,
+        group_eligibility: group,
+        women_only: group === "women",
+      };
+      if (indexed)
+        changes.starting_location = {
+          city: indexed.record.origin_city,
+          state: indexed.record.origin_state,
+          displayName: indexed.record.origin_label,
+          placeId: data.fromPlaceId,
+        };
+      const defined = Object.fromEntries(
+        Object.entries(changes).filter(([, value]) => value !== undefined),
+      );
       await db.update(
         "trips",
         { id: tripId },
         {
-          $set: {
-            title: data.title,
-            description: data.description,
-            plan: data.plan,
-            rules: data.rules,
-            category: data.category,
-            departure_utc: new Date(data.departureUtc),
-            departure_timezone: data.timeZone,
-          },
+          $set: { ...defined, revision: revision + 1, updated_at: new Date() },
+          ...(patch.destinationPlaceId === undefined &&
+          patch.destination !== undefined &&
+          patch.destination !== t.destination
+            ? { $unset: { destination_place_id: "" } }
+            : {}),
         },
       );
-      await audit(db, req.user.id, "trip_edited", tripId);
-      for (const m of await db.all("trip_members", { trip_id: tripId }))
+      if (indexed)
+        await db.update(
+          "trip_locations",
+          { trip_id: tripId },
+          {
+            $set: indexed.record,
+            $unset: Object.fromEntries(
+              indexed.missing
+                .flatMap((f) => [f, f + "_label", f + "_state", f + "_city"])
+                .map((f) => [f, ""]),
+            ),
+          },
+          { upsert: true },
+        );
+      const changedFields = Object.keys(defined).filter(
+        (key) => JSON.stringify(t[key]) !== JSON.stringify(defined[key]),
+      );
+      await db.insert("admin_audit", {
+        actor_id: req.user.id,
+        action: "trip_edited",
+        subject: tripId,
+        reason: "Updated " + changedFields.join(", "),
+        created_at: new Date(),
+        changes: Object.fromEntries(
+          changedFields.map((key) => [
+            key,
+            { before: t[key] ?? null, after: defined[key] },
+          ]),
+        ),
+      });
+      const pending = await db.all("join_requests", {
+        trip_id: tripId,
+        status: "pending",
+      });
+      for (const user of new Set([
+        ...members.map((m) => m.user_id),
+        ...pending.map((r) => r.user_id),
+      ]))
         await notify(
           db,
-          m.user_id,
-          "Your organizer updated the trip. Check the departure time and plan.",
+          user,
+          "Your organizer updated the trip. Review its route, dates, budget and group details before traveling.",
         );
     });
     res.json({ ok: true });
@@ -558,7 +733,9 @@ export function registerCommunity(
       id: user,
       name: profile.display_name,
       bio: profile.bio || "",
-      verified: profile.organizer_verification === "approved",
+      verified:
+        organizerVerificationRequired &&
+        profile.organizer_verification === "approved",
       average: reviews.length
         ? reviews.reduce((n, r) => n + r.rating, 0) / reviews.length
         : null,

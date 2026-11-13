@@ -13,9 +13,9 @@ existing Node.js/Express/MongoDB stack. It is not automatically deployed.
 - When the approval switch is enabled, new trip creation and join-request management require an approved organizer. Beta defaults to open organizing.
   Existing organizers are **not auto-approved**. Their existing public trip and
   participation records remain. Dashboard: counts, own trips, requests, active
-  participants, limited editing and cancellation with reasons. Route/date/group
-  capacity are not silently changed under accepted participants. Editing supports
-  description, itinerary, rules, title, travel style and actual departure time.
+  participants, limited editing and cancellation with reasons. All create-trip details can be edited before departure. Capacity and group
+  changes cannot exclude registered participants; changes are audited and
+  participants and pending applicants are notified.
 - Guest-first discovery, public trip details, organizer biographies, verification
   badges, organizer review summaries/distribution and genuine traveler stories.
   Account emails/gender and verification evidence are not public profile fields.
@@ -250,3 +250,44 @@ show a retry state and retain the URL instead of presenting a false logout.
 Home and main-view links use history navigation within the app; modified clicks
 and new tabs retain normal link behavior. Private routes still require a real
 session, and explicit login remains available.
+
+## Trip completion and testimonials
+
+There is no manual completion button. A non-cancelled trip is completed when its
+return date is earlier than today in Asia/Kolkata: a trip returning on November
+14 becomes completed at midnight starting November 15 IST. This is calculated
+from dates rather than a background job, so refresh after that boundary.
+
+An eligible registered participant (including the organizer) can then select
+Share your experience, choose the completed trip, enter a genuine testimonial
+and consent to publication. Leaving before the trip begins does not qualify.
+An administrator must approve and feature the testimonial before the homepage
+shows it. Cancellation does not count as completion. For immediate beta testing,
+use a completed-trip fixture in a separate test database; do not backdate live
+trips or rewrite participant history. This release does not change those rules.
+
+## Full trip editing and dashboard
+
+The dashboard has one organizer profile/reviews action; trip creation remains in
+the header. Trip cards use restrained hover borders/shadows, date/budget/crew
+summaries, lifecycle labels, and distinct labeled action colors. Editing and
+cancellation are disabled on cards when their underlying operation is unavailable.
+
+The edit form includes every create-trip field, plus the stored IANA departure
+time zone. It preserves existing values, resolves changed city selections, and
+updates geographic indexes atomically with the trip. Missing destination matches
+remove old destination coordinates. Departure times are converted from the chosen
+zone; missing/repeated times around daylight-saving changes are rejected explicitly.
+
+Already going includes registered participants as well as outside companions;
+Open spots is the remaining unbooked capacity. Full trips can save with zero open
+spots. Edits cannot lower Already going below the registered-member count, exclude
+members through group eligibility, exceed 20 total travelers, or rewrite departed
+or cancelled trips. Changed routes/dates/budgets do not delete bookings or pending
+requests. Pending applicants must still meet the updated rules when approved.
+
+Updates record before/after values in admin audit history and notify registered
+members and pending applicants. Revision checks reject stale edits; participant
+changes during a location lookup also require the organizer to reload. Beta hides
+organizer-verification claims on cards and public profiles, even for previously
+approved accounts; stored approvals are retained for verification-enabled mode.
