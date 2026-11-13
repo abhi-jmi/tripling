@@ -129,7 +129,8 @@ nav {
   align-items: center;
 }
 .nav-link {
-  height: 100%;
+  height: auto;
+  padding-block: 10px;
   display: flex;
   align-items: center;
   font-size: 13px;
@@ -141,14 +142,25 @@ nav {
 .nav-link.active {
   color: var(--green);
 }
-.nav-link.active:after {
+.nav-link::after {
   content: "";
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 3px;
+  height: 2px;
+  border-radius: 2px;
   background: var(--orange);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+.nav-link.active::after,
+.nav-link:hover::after,
+.nav-link:focus-visible::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 .nav-actions {
   margin-left: auto;
@@ -1998,7 +2010,8 @@ dialog::backdrop {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  .nav-link::after {
     scroll-behavior: auto !important;
     transition: none !important;
   }
@@ -2971,8 +2984,13 @@ body.auth-screen {
   padding: 12px 4px;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
   list-style: none;
   white-space: nowrap;
+}
+.account-menu summary > svg {
+  display: block;
+  flex-shrink: 0;
 }
 .account-menu summary::-webkit-details-marker {
   display: none;
