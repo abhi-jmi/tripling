@@ -2,7 +2,11 @@ import { createCityResolver } from "./nearby.js";
 export async function indexTripLocation(
   db,
   trip,
-  { resolver = createCityResolver(), requiredOrigin = false } = {},
+  {
+    resolver = createCityResolver(),
+    requiredOrigin = false,
+    persist = true,
+  } = {},
 ) {
   if (!resolver) {
     if (requiredOrigin)
@@ -48,11 +52,17 @@ export async function indexTripLocation(
   record.unresolved_fields = missing;
   if (!record.origin && !record.destination)
     record.expires_at = new Date(Date.now() + 15 * 60000);
+  if (persist) await saveTripLocation(db, record);
+  return { indexed: !!record.origin || !!record.destination, missing, record };
+}
+
+export async function saveTripLocation(db, record) {
+  const missing = record.unresolved_fields;
   // Persist failed attempts briefly so an ambiguous first page cannot starve
   // later trips in the next maintenance batch. No fabricated point is stored.
   await db.update(
     "trip_locations",
-    { trip_id: trip.id },
+    { trip_id: record.trip_id },
     {
       $set: record,
       $unset: Object.fromEntries(
@@ -63,5 +73,4 @@ export async function indexTripLocation(
     },
     { upsert: true },
   );
-  return { indexed: !!record.origin || !!record.destination, missing, record };
 }

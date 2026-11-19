@@ -120,6 +120,7 @@ export function registerNearbyRoutes(app, pool, { throttle, cityResolver }) {
         offset: z.coerce.number().int().min(0).max(100000).default(0),
         when: z.iso.date().optional(),
         style: z.string().trim().max(60).optional(),
+        category: z.string().trim().max(60).optional(),
         budget: z.coerce.number().min(0).max(1000000).optional(),
         mode: z.string().max(40).optional(),
         women: z.enum(["true", "false"]).optional(),
@@ -182,6 +183,7 @@ export function registerNearbyRoutes(app, pool, { throttle, cityResolver }) {
         : [];
       const match = {
         "trip.status": "open",
+        "trip.moderation_hidden": { $ne: true },
         "trip.ends_on": { $gte: travelDate() },
         "trip.id": { $nin: hidden.map((h) => h.trip_id) },
       };
@@ -190,6 +192,7 @@ export function registerNearbyRoutes(app, pool, { throttle, cityResolver }) {
         match["trip.ends_on"] = { $gte: query.when };
       }
       if (query.style) match["trip.category"] = query.style;
+      if (query.category) match.$and = [{ "trip.category": query.category }];
       if (query.budget !== undefined)
         match["trip.budget_min"] = { $lte: query.budget };
       if (query.mode)

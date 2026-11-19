@@ -37,6 +37,10 @@ if (!admin)
 process.env.TRIPLING_ADMIN_USER_IDS = admin.id;
 createApp(pool, {
   production: false,
+  publicOrigin: `http://127.0.0.1:${Number(process.env.PORT) || 3102}`,
+  passwordResetMailer: async (message) => {
+    await pool.insert("test_mail_outbox", message);
+  },
   placesAdapter: null,
   cityResolver: async (name, placeId) => ({
     latitude: name === "Kullu" ? 31.9579 : 32.2432,

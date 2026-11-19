@@ -154,7 +154,9 @@ nav {
   opacity: 0;
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 160ms ease, opacity 160ms ease;
+  transition:
+    transform 160ms ease,
+    opacity 160ms ease;
 }
 .nav-link.active::after,
 .nav-link:hover::after,
@@ -1232,7 +1234,9 @@ dialog::backdrop {
   align-items: center;
 }
 .profile-account-actions [data-directory] {
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 .profile-account-actions [data-directory]:hover {
   background-color: #f0f3eb;
@@ -3829,4 +3833,20 @@ body.auth-screen {
     padding: 16px;
     gap: 12px;
   }
+}
+.recovery-link {
+  margin-top: 16px;
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-size: 13px;
+}
+#password-recovery-panel form {
+  display: grid;
+  gap: 16px;
+  margin: 24px 0;
+}
+#password-recovery-panel p {
+  font-size: 13px;
+  line-height: 1.7;
 }

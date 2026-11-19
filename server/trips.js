@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createTripFeed } from "./trip-feed.js";
 import { tripSchema } from "./trip-input.js";
 import { indexTripLocation } from "./geo-index.js";
 import { randomUUID } from "node:crypto";
@@ -130,6 +131,17 @@ export function registerTripRoutes(
     organizerVerificationRequired,
   },
 ) {
+  const feed = createTripFeed(pool, {
+    serialize,
+    userMap,
+    organizerVerificationRequired,
+  });
+  app.get("/api/trips", async (req, res) =>
+    res.json(await feed.load(req.query, req.user)),
+  );
+  app.get("/api/trips/:id", async (req, res) =>
+    res.json({ trip: await feed.detail(req.params.id, req.user) }),
+  );
   app.get("/api/locations", async (req, res) => {
     const q = z
         .string()
@@ -180,71 +192,31 @@ export function registerTripRoutes(
   });
   app.get("/api/bootstrap", async (req, res) => {
     const id = req.user?.id || null;
-    const [records, members, participants, reviews, hidden] = await Promise.all(
-      [
-        pool.all("trips", {}, { sort: { created_at: -1, id: 1 } }),
-        pool.all("trip_members"),
-        id ? pool.all("trip_participants", { user_id: id }) : [],
-        pool.all("reviews"),
-        id ? pool.all("hidden_trips", { user_id: id }) : [],
-      ],
-    );
-    const users = await userMap(
-      pool,
-      records.flatMap((t) => [t.owner_id, t.organizer_id]),
-    );
-    const reputation = await pool.database
-      .collection("organizer_reviews")
-      .aggregate([
-        { $match: { hidden: { $ne: true } } },
+    const [page, hidden] = await Promise.all([
+      feed.load(
         {
-          $group: {
-            _id: "$organizer_id",
-            average: { $avg: "$rating" },
-            count: { $sum: 1 },
-          },
+          view: "all",
+          limit: 24,
+          ...req.query,
+          ...(!id &&
+          ["my-trips", "saved", "reviewable"].includes(req.query.view)
+            ? { view: "discover" }
+            : {}),
         },
-      ])
-      .toArray();
-    const repMap = new Map(reputation.map((r) => [r._id, r]));
-    const tripList = records
-      .filter(
-        (t) =>
-          !hidden.some((h) => h.trip_id === t.id) ||
-          participants.some((p) => p.trip_id === t.id),
-      )
-      .map((t) => {
-        const ratings = reviews.filter((r) => r.trip_id === t.id);
-        return serialize({
-          ...t,
-          organizer_rating: repMap.get(t.organizer_id)?.average,
-          organizer_review_count: repMap.get(t.organizer_id)?.count,
-          host_verified:
-            organizerVerificationRequired &&
-            users.get(t.organizer_id)?.organizer_verification === "approved",
-          host:
-            users.get(t.organizer_id)?.display_name || "No active organizer",
-          creator: users.get(t.owner_id)?.display_name || "Former traveler",
-          member_count: members.filter((m) => m.trip_id === t.id).length,
-          is_member: members.some(
-            (m) => m.trip_id === t.id && m.user_id === id,
-          ),
-          participated: participants.some((p) => p.trip_id === t.id),
-          review_count: ratings.length,
-          average_rating: ratings.length
-            ? Math.round(
-                (ratings.reduce((sum, r) => sum + r.rating, 0) /
-                  ratings.length) *
-                  10,
-              ) / 10
-            : null,
-        });
-      });
+        req.user,
+      ),
+      id ? pool.all("hidden_trips", { user_id: id }) : [],
+    ]);
     const result = {
       options: tripOptions,
       user: req.user ? publicUser(req.user) : null,
       today: travelDate(),
-      trips: tripList,
+      trips: page.trips,
+      feed: {
+        total: page.total,
+        offset: page.offset,
+        nextOffset: page.nextOffset,
+      },
       saved: [],
       requests: [],
       incoming: [],
@@ -253,9 +225,12 @@ export function registerTripRoutes(
       blocks: [],
     };
     if (id) {
-      const organized = records.filter(
-        (t) => t.organizer_id === id && t.ends_on >= travelDate(),
+      const organized = await pool.all(
+        "trips",
+        { organizer_id: id, ends_on: { $gte: travelDate() } },
+        { projection: { _id: 0, id: 1, title: 1 } },
       );
+      result.createdCount = await pool.count("trips", { owner_id: id });
       const [saved, requests, incoming, notifications, blocks] =
         await Promise.all([
           pool.all("saved_trips", { user_id: id }),
@@ -457,7 +432,8 @@ export function registerTripRoutes(
       fail(403, "Complete your 18+ profile before joining.");
     await transaction(pool, async (db) => {
       const t = await lockTrip(db, id);
-      if (!t || t.status !== "open") fail(404, "Trip is not available.");
+      if (!t || t.status !== "open" || t.moderation_hidden)
+        fail(404, "Trip is not available.");
       if (t.ends_on < travelDate())
         fail(400, "This trip has ended; joining is closed.");
       if (!t.organizer_id)
@@ -586,7 +562,11 @@ export function registerTripRoutes(
         fail(403, "Only the current organizer can review requests.");
       await lockTravelers(db, [req.user.id]);
       await requireVerified(db, req.user.id, organizerVerificationRequired);
-      if (t.status !== "open" || t.ends_on < travelDate())
+      if (
+        t.status !== "open" ||
+        t.moderation_hidden ||
+        t.ends_on < travelDate()
+      )
         fail(409, "This trip is no longer accepting travelers.");
       const request = await db.one("join_requests", {
         trip_id: id,

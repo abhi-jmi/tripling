@@ -20,13 +20,15 @@ For a separate Node.js process, run `npm ci`, copy `.env.example` to untracked `
 
 ## Features
 
-- Email/password registration with required first/last names, confirmation, 18+ acknowledgement, and versioned legal consent. Passwords use salted scrypt; sessions use HttpOnly cookies and hashed tokens in MongoDB.
+- Email/password registration with required first/last names, confirmation, 18+ acknowledgement, and versioned legal consent. Passwords use salted scrypt; sessions use HttpOnly cookies and hashed tokens in MongoDB. Optional Amazon SES password recovery uses expiring single-use links and revokes prior sessions after reset.
 - Optional [Google sign-in](docs/google-sign-in.md) with PKCE, nonce, browser-bound state and deliberate account linking.
 - Database-backed trip posting, alphabetical location suggestions, saved trips, organizer approvals, private group messages and notifications.
 - Transactions and unique indexes protect membership, capacity, consent and identity changes across multiple ECS tasks. MongoDB **replica sets/Atlas are required**; standalone MongoDB is rejected at startup.
-- Published trips remain available. Everyone may leave; organizer duties pass to the earliest remaining member. With no active organizer, joining closes. Participation history and past-trip reviews remain available.
+- Published trips are retained. Confirmed members can leave more than 24 hours before departure; closer departures and missing legacy times require an audited support exception. Pending requests can be withdrawn anytime. Organizer duties pass to the earliest remaining member. Trips complete automatically after their return date in India time; participation history and reviews remain available.
 - Traveler blocking with required reasons. A selected shared trip limits reason visibility to its registered participants, including those who left; private reasons remain with their author. Statements can be reported. Blocks restrict new memberships and hide messages between the affected travelers.
-- Public database-backed `/terms` and `/privacy`, safe profile/name search, origin checks and database-backed login throttling.
+- Public database-backed `/terms` and `/privacy` follow the beta organizer-approval setting, with historical consent retained. Safe profile/name search, origin checks and database-backed login throttling.
+- Admin safety-report queues with private reasons, audited visibility decisions, and retained blocks/history.
+- Server-side feed pagination and filters, indexed nearby search, and automatic bounded refresh of expiring location indexes.
 
 Travel dates are interpreted in Asia/Kolkata. Public APIs expose selected fields, never password hashes or private account emails. Reporting is stored for operator follow-up; it is not emergency monitoring.
 
@@ -59,9 +61,7 @@ Existing RDS resources are kept in the legacy foundation template during cutover
 
 City autocomplete can use Google Places API (New); see [Google Places setup](docs/google-places.md) for server-side key restrictions, AWS secret configuration and deployment.
 
-Organizer publishing now requires explicit application approval. Configure trusted
-admin account UUIDs before releasing this increment; no existing organizer is
-silently approved. See [Organizer and community release](docs/organizer-community.md)
+Organizer publishing is open during beta by default (`ORGANIZER_VERIFICATION_REQUIRED=false`). Setting the flag to `true` restores application approval requirements; no account is silently approved and beta hides verification badges. Configure trusted admin UUIDs for moderation. See [Organizer and community release](docs/organizer-community.md)
 for private-document encryption setup, legacy departure confirmation, indexed
 location backfill, cancellation policy, feedback/testimonial moderation and tests.
-No production deployment is performed by these source changes.
+See [AWS activation notes](docs/aws-deployment.md#launch-priorities-password-recovery-and-automatic-maintenance) for the SES sender/IAM setup and automatic location maintenance. No production deployment is performed by these source changes.

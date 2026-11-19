@@ -2,6 +2,8 @@ import { createDatabase } from "./db.js";
 import { migrate } from "./migrate.js";
 import { publishLegalDocuments, legalConfiguration } from "./legal.js";
 import { createApp } from "./app.js";
+import { createCityResolver } from "./nearby.js";
+import { startLocationMaintenance } from "./location-maintenance.js";
 // Load OAuth credentials only on the server; never bake secrets into the image.
 if (process.env.GOOGLE_OAUTH_SECRET_ARN) {
   const { SecretsManagerClient, GetSecretValueCommand } =
@@ -96,10 +98,14 @@ const server = createApp(pool).listen(
     console.log("Tripling is ready.");
   },
 );
+const stopMaintenance = startLocationMaintenance(pool, {
+  resolver: createCityResolver(),
+});
 let stopping = false;
 function shutdown() {
   if (stopping) return;
   stopping = true;
+  stopMaintenance();
   server.close(async () => {
     await pool.close();
     process.exit(0);

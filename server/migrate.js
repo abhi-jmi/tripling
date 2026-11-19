@@ -8,6 +8,8 @@ export const COLLECTIONS = [
   "feedback",
   "testimonials",
   "sessions",
+  "password_resets",
+  "system_jobs",
   "auth_rate_limits",
   "trips",
   "trip_members",
@@ -32,6 +34,17 @@ export const COLLECTIONS = [
   "data_transfers",
 ];
 const indexes = {
+  system_jobs: [
+    [{ id: 1 }, { unique: true }],
+    [{ expires_at: 1 }, { expireAfterSeconds: 0 }],
+  ],
+  reports: [[{ status: 1, created_at: -1, id: 1 }, {}]],
+  block_reason_reports: [[{ status: 1, created_at: -1, id: 1 }, {}]],
+  password_resets: [
+    [{ user_id: 1 }, { unique: true }],
+    [{ token_hash: 1 }, { unique: true }],
+    [{ expires_at: 1 }, { expireAfterSeconds: 0 }],
+  ],
   trip_locations: [
     [{ trip_id: 1 }, { unique: true }],
     [{ origin: "2dsphere" }, {}],
@@ -70,6 +83,11 @@ const indexes = {
   trips: [
     [{ id: 1 }, { unique: true }],
     [{ status: 1, starts_on: 1 }, {}],
+    [{ status: 1, starts_on: 1, id: 1 }, {}],
+    [{ budget_min: 1, starts_on: 1, id: 1 }, {}],
+    [{ ends_on: 1, starts_on: 1, id: 1 }, {}],
+    [{ status: 1, ends_on: 1, location_refresh_after: 1 }, {}],
+    [{ owner_id: 1 }, {}],
     [{ organizer_id: 1 }, {}],
   ],
   trip_members: [
@@ -148,6 +166,7 @@ export async function migrate(db) {
     { document_expires_at: { $lte: new Date() } },
     { $unset: { document: "" }, $set: { hasDocument: false } },
   );
+  await db.removeMany("password_resets", { expires_at: { $lte: new Date() } });
   await db.removeMany("sessions", { expires_at: { $lte: new Date() } });
   await db.removeMany("oauth_flows", { expires_at: { $lte: new Date() } });
   await db.removeMany("oauth_pending", { expires_at: { $lte: new Date() } });
