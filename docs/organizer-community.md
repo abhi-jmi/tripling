@@ -290,3 +290,13 @@ members and pending applicants. Revision checks reject stale edits; participant
 changes during a location lookup also require the organizer to reload. Beta hides
 organizer-verification claims on cards and public profiles, even for previously
 approved accounts; stored approvals are retained for verification-enabled mode.
+
+## Administrator trip deletion
+
+On **Organize → Administration → Manage trips**, search by title, city or exact trip UUID. The list is paginated (25 per page) and includes upcoming, completed, canceled and hidden trips. **Delete trip** opens a separate confirmation showing the current title, route and dates. Type the exact trip UUID and provide a private reason of at least 10 characters, then choose **Permanently delete trip**. **Keep trip** closes the confirmation without changing anything. If the trip was edited after opening the confirmation, reopen it before deleting.
+
+The server checks the configured administrator UUIDs independently of the UI. Organizers and travelers cannot delete trips, including their own. The admin routes are `GET /api/admin/trips`, `GET /api/admin/trips/:id` and `DELETE /api/admin/trips/:id`; deletion requires `confirmationTripId`, `reason` and the preview's `revision` in a same-origin JSON request.
+
+Deletion is one MongoDB transaction. It removes the trip, active memberships, participation history, join requests, saves, hidden entries, messages, traveler and organizer reviews, testimonials, old trip notifications and the location index. The organizer, current members and pending applicants receive a new in-app notice without a dead trip link. Account profiles, credentials, other trips, shared city caches and legal acceptances are untouched. Safety reports, cancellation audits and the deletion audit (actor, trip ID/title, reason, previous status and affected record counts) are retained. Existing personal blocks remain active; reasons previously shared within the deleted trip become private to their authors. Related writes lock the same trip document, preventing an overlapping save, review, testimonial, report or block from recreating deleted trip content.
+
+There is no restore action for deletion in the app; configured backup retention still applies. Use **Hide** in Safety reports for a reversible visibility change, or **Cancel trip** to retain ordinary trip history. Deploy this code with the normal image release; no new AWS secrets or CloudFormation parameters are required.

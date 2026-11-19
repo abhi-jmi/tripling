@@ -3850,3 +3850,15 @@ body.auth-screen {
   font-size: 13px;
   line-height: 1.7;
 }
+
+.admin-delete-trip {
+  background: #fbefec;
+  border-color: #edd3ca;
+  color: #994e40;
+}
+.admin-delete-trip:hover:not(:disabled) {
+  background: #f7e4de;
+}
+.admin-trip-management .request-item small {
+  overflow-wrap: anywhere;
+}

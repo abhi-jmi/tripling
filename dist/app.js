@@ -278,6 +278,9 @@ async function refresh() {
     toast,
     refresh,
     data: () => data,
+    forgetTrip: (id) => {
+      data.trips = data.trips.filter((t) => t.id !== id);
+    },
     login: (path) =>
       requireLogin(path ? { type: "community", path } : { type: "profile" }),
   });

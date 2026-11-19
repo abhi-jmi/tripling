@@ -207,9 +207,50 @@ try {
     (await pool.one("trips", { id: trip.id })).moderation_hidden,
     true,
   );
+  const tripFilter = admin.locator('[data-community-form="trip-filter"]');
+  await tripFilter.locator('[name="tripQuery"]').fill(trip.id);
+  await tripFilter.locator('[type="submit"]').click();
+  const deleteButton = admin.locator('[data-community="delete-trip"]');
+  await deleteButton.waitFor();
+  await deleteButton.click();
+  await admin.locator('[data-community-form="delete-trip"]').waitFor();
+  await admin.locator("[data-dismiss-deletion]").click();
+  assert(await pool.one("trips", { id: trip.id }));
+  await deleteButton.click();
+  const deletion = admin.locator('[data-community-form="delete-trip"]');
+  await deletion.locator('[name="confirmationTripId"]').fill(trip.id);
+  await deletion
+    .locator('[name="reason"]')
+    .fill("Removing this local browser test trip.");
+  await deletion.locator('[type="submit"]').click();
+  await admin.locator("#modal").waitFor({ state: "hidden" });
+  await admin
+    .getByText("Trip permanently deleted. The deletion has been audited.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(await pool.one("trips", { id: trip.id }), null);
+  assert(
+    await pool.one("admin_audit", { subject: trip.id, action: "trip_deleted" }),
+  );
+  assert.equal(
+    await admin.locator('[data-community="delete-trip"]').count(),
+    0,
+  );
+  assert.equal(
+    (await page.request.get(origin + "/api/trips/" + trip.id)).status(),
+    404,
+  );
+  await admin.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await admin.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    true,
+  );
   assert.deepEqual(errors, []);
   console.log(
-    "Launch browser checks passed: feed pages, nearby pages, session refresh, reset recovery and admin moderation.",
+    "Launch browser checks passed: feed pages, nearby pages, session refresh, reset recovery, admin moderation and confirmed admin trip deletion.",
   );
 } finally {
   await browser.close();

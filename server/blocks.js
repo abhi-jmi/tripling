@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { transaction, lockTravelers } from "./db.js";
+import { transaction, lockTravelers, lockTrip } from "./db.js";
 import { httpError, requireParticipant, prefix } from "./travel-rules.js";
 const uuid = z.uuid();
 const fail = (s, m) => {
@@ -135,6 +135,7 @@ export function registerBlockRoutes(app, pool, { requireUser, throttle }) {
         if (!(await db.one("users", { id: d.userId })))
           fail(404, "Traveler not found.");
         if (d.tripId) {
+          if (!(await lockTrip(db, d.tripId))) fail(404, "Trip not found.");
           await requireParticipant(db, d.tripId, req.user.id);
           await requireParticipant(db, d.tripId, d.userId);
         }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isAdmin } from "./roles.js";
 import { travelDate, httpError } from "./travel-rules.js";
 const pattern = (text) =>
   new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -244,6 +245,7 @@ export function createTripFeed(
     if (!trip) throw httpError(404, "Trip not found.");
     if (
       trip.moderation_hidden &&
+      !isAdmin(user) &&
       (!user ||
         !(
           trip.owner_id === user.id ||
