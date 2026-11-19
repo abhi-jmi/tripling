@@ -409,16 +409,18 @@ export function registerTripRoutes(
   app.put("/api/trips/:id/save", requireUser, async (req, res) => {
     const id = uuid.parse(req.params.id),
       { saved } = z.object({ saved: z.boolean() }).parse(req.body);
-    if (!(await pool.one("trips", { id }))) fail(404, "Trip not found.");
-    const key = { user_id: req.user.id, trip_id: id };
-    if (saved)
-      await pool.update(
-        "saved_trips",
-        key,
-        { $setOnInsert: key },
-        { upsert: true },
-      );
-    else await pool.remove("saved_trips", key);
+    await transaction(pool, async (db) => {
+      if (!(await lockTrip(db, id))) fail(404, "Trip not found.");
+      const key = { user_id: req.user.id, trip_id: id };
+      if (saved)
+        await db.update(
+          "saved_trips",
+          key,
+          { $setOnInsert: key },
+          { upsert: true },
+        );
+      else await db.remove("saved_trips", key);
+    });
     res.json({ saved });
   });
   app.post("/api/trips/:id/requests", requireUser, async (req, res) => {
@@ -711,7 +713,7 @@ export function registerTripRoutes(
       .parse(req.body);
     await throttle(req, `report:${req.user.id}`, 30);
     await transaction(pool, async (db) => {
-      const t = await db.one("trips", { id: d.tripId });
+      const t = await lockTrip(db, d.tripId);
       if (!t) fail(404, "Trip not found.");
       if (t.owner_id === req.user.id)
         fail(400, "You cannot report your own trip.");
@@ -748,37 +750,41 @@ export function registerTripRoutes(
           rating: z.number().int().min(1).max(5),
           body: z.string().trim().min(10).max(1000),
         })
-        .parse(req.body),
-      t = await pool.one("trips", { id });
-    if (!t || t.status !== "open" || t.ends_on >= travelDate())
-      fail(400, "Reviews open after a trip has ended.");
-    if (d.travelerId === req.user.id) fail(400, "You cannot review yourself.");
-    if (
-      !(await reviewEligible(pool, t, req.user.id)) ||
-      !(await reviewEligible(pool, t, d.travelerId))
-    )
-      fail(
-        403,
-        "Reviews require registered participation overlapping the trip dates.",
-      );
-    try {
-      await pool.insert("reviews", {
-        trip_id: id,
-        author_id: req.user.id,
-        traveler_id: d.travelerId,
-        rating: d.rating,
-        body: d.body,
-      });
-    } catch (e) {
-      if (e.code === 11000)
-        fail(409, "You already reviewed this traveler for this trip.");
-      throw e;
-    }
+        .parse(req.body);
+    await transaction(pool, async (db) => {
+      const t = await lockTrip(db, id);
+      if (!t || t.status !== "open" || t.ends_on >= travelDate())
+        fail(400, "Reviews open after a trip has ended.");
+      if (d.travelerId === req.user.id)
+        fail(400, "You cannot review yourself.");
+      if (
+        !(await reviewEligible(db, t, req.user.id)) ||
+        !(await reviewEligible(db, t, d.travelerId))
+      )
+        fail(
+          403,
+          "Reviews require registered participation overlapping the trip dates.",
+        );
+      try {
+        await db.insert("reviews", {
+          trip_id: id,
+          author_id: req.user.id,
+          traveler_id: d.travelerId,
+          rating: d.rating,
+          body: d.body,
+        });
+      } catch (e) {
+        if (e.code === 11000)
+          fail(409, "You already reviewed this traveler for this trip.");
+        throw e;
+      }
+    });
     res.status(201).json({ ok: true });
   });
   app.get("/api/trips/:id/reviews", async (req, res) => {
-    const id = uuid.parse(req.params.id),
-      records = await pool.all(
+    const id = uuid.parse(req.params.id);
+    if (!(await pool.one("trips", { id }))) fail(404, "Trip not found.");
+    const records = await pool.all(
         "reviews",
         { trip_id: id },
         { sort: { created_at: -1, id: -1 }, limit: 50 },

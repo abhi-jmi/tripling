@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { refreshLocationBatch } from "./location-maintenance.js";
+import { registerAdminTrips } from "./admin-trips.js";
 import { registerModeration } from "./moderation.js";
 import { editableTripSchema, tripPatchSchema } from "./trip-input.js";
 import { departureFromLocalTime } from "./trip-time.js";
@@ -107,6 +108,7 @@ export function registerCommunity(
     next();
   });
   registerModeration(app, pool);
+  registerAdminTrips(app, pool);
   const notify = (db, user, body) =>
     db.insert("notifications", { user_id: user, trip_id: null, body });
   app.get("/api/organizer/verification", requireUser, async (req, res) => {
@@ -799,42 +801,44 @@ export function registerCommunity(
   app.post("/api/testimonials", requireUser, async (req, res) => {
     await throttle(req, `testimonial:${req.user.id}`, 5);
     const data = z
-        .object({
-          tripId: id,
-          message: text(20, 1000),
-          consent: z.literal(true),
-        })
-        .parse(req.body),
-      t = await pool.one("trips", { id: data.tripId });
-    if (
-      !t ||
-      t.status === "canceled" ||
-      t.ends_on >= travelDate() ||
-      !(await reviewEligible(pool, t, req.user.id))
-    )
-      fail(403, "A confirmed completed trip is required.");
-    await pool.update(
-      "testimonials",
-      { user_id: req.user.id, trip_id: data.tripId },
-      {
-        $set: {
-          message: data.message,
-          consent: true,
-          consented_at: new Date(),
-          status: "pending",
-          featured: false,
-          name: req.user.display_name,
-          trip_title: t.title,
+      .object({
+        tripId: id,
+        message: text(20, 1000),
+        consent: z.literal(true),
+      })
+      .parse(req.body);
+    await transaction(pool, async (db) => {
+      const t = await lockTrip(db, data.tripId);
+      if (
+        !t ||
+        t.status === "canceled" ||
+        t.ends_on >= travelDate() ||
+        !(await reviewEligible(db, t, req.user.id))
+      )
+        fail(403, "A confirmed completed trip is required.");
+      await db.update(
+        "testimonials",
+        { user_id: req.user.id, trip_id: data.tripId },
+        {
+          $set: {
+            message: data.message,
+            consent: true,
+            consented_at: new Date(),
+            status: "pending",
+            featured: false,
+            name: req.user.display_name,
+            trip_title: t.title,
+          },
+          $setOnInsert: {
+            id: randomUUID(),
+            created_at: new Date(),
+            user_id: req.user.id,
+            trip_id: data.tripId,
+          },
         },
-        $setOnInsert: {
-          id: randomUUID(),
-          created_at: new Date(),
-          user_id: req.user.id,
-          trip_id: data.tripId,
-        },
-      },
-      { upsert: true },
-    );
+        { upsert: true },
+      );
+    });
     res.status(201).json({ ok: true });
   });
   app.get("/api/testimonials", async (req, res) =>

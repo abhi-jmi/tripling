@@ -312,15 +312,17 @@
     const offset = +(
       new URLSearchParams(query.replace(/^\?/, "")).get("offset") || 0
     );
-    const [v, r, moderation] = await Promise.all([
+    const [v, r, moderation, tripPage] = await Promise.all([
       c.api("/admin/verifications?offset=" + offset),
       c.api("/admin/community" + query),
       c.api("/admin/reports" + query),
+      c.api("/admin/trips" + query),
     ]);
     frame(
       "Administration",
       `<div class="modal-actions">${offset ? `<button class="secondary" data-community="admin" data-offset="${Math.max(0, offset - 100)}">Previous page</button>` : ""}${r.nextOffset !== null || v.nextOffset !== null ? `<button class="secondary" data-community="admin" data-offset="${offset + 100}">Next page</button>` : ""}</div><h3>Verification requests</h3>${v.requests.map((v) => `<article class="request-item"><h4>${esc(v.name)} · ${esc(v.status)}</h4><p>${esc(v.contact)}</p><p>${esc(v.experience)}</p>${v.hasDocument ? `<a class="secondary" href="/api/admin/verifications/${v.user_id}/document">Download private document</a>` : ""}${v.status === "pending" ? form("decision", hidden("user", v.user_id) + `<label class="form-field">Decision<select name="status">${options(["approved", "rejected"])}</select></label>` + field("reason", "Decision reason (optional)").replace(" required", "")) : ""}</article>`).join("")}
-  <h3>Safety reports</h3><p>Reports and decision notes are private to administrators. Hiding a trip pauses public discovery and new joins; participant history is retained. Hiding a statement preserves the personal block.</p>${form("report-filter", `<label>Report type<select name="kind">${options(["trip", "block"], new URLSearchParams(query).get("kind") || "trip")}</select></label><label>Status<select name="reportStatus"><option value="">All</option>${options(["new", "in_progress", "resolved", "dismissed"], new URLSearchParams(query).get("reportStatus") || "")}</select></label>`)}<p>${moderation.total} reports</p>${moderation.reports.map((f) => `<article class="request-item"><h4>${esc(f.trip?.title || "Trip record unavailable")} · ${esc(f.status)}</h4><p>Report: ${esc(f.reason)} ${esc(f.note || "")}</p>${f.statement ? `<p>Reported statement (${f.statement.hidden ? "hidden" : "visible to trip participants"}): ${esc(f.statement.reason)}</p>` : `<p>Trip ${f.trip?.hidden ? "hidden from public discovery" : "visible"}</p>`}<p>Reporter ID: ${esc(f.reporter_id)}</p>${f.decision_reason ? `<p>Last decision: ${esc(f.decision_reason)}</p>` : ""}${form("report-decision", hidden("kind", new URLSearchParams(query).get("kind") || "trip") + hidden("id", f.id) + hidden("revision", f.revision) + `<label>Status<select name="status">${options(["new", "in_progress", "resolved", "dismissed"], f.status)}</select></label><label>Visibility action<select name="action">${options(["none", "hide", "restore"])}</select></label>` + message("reason", "Private decision reason (required)", "", 10))}</article>`).join("")}${moderation.offset ? `<button class="secondary" data-report-offset="${Math.max(0, moderation.offset - 25)}">Previous reports</button>` : ""}${moderation.nextOffset !== null ? `<button class="secondary" data-report-offset="${moderation.nextOffset}">More reports</button>` : ""}
+  <section class="admin-trip-management"><h3>Manage trips</h3><p>Only administrators can permanently delete trips. Use Hide in Safety reports when you only need to pause public discovery.</p>${form("trip-filter", field("tripQuery", "Search by trip title, city or ID", new URLSearchParams(query).get("tripQuery") || "").replace(" required", ""), "Search trips")}<p>${tripPage.total} trips</p>${tripPage.trips.map((t) => `<article class="request-item"><h4>${esc(t.title)}</h4><p>${esc(t.from_city)} → ${esc(t.destination)} · ${esc(t.starts_on)} · ${esc(t.status)}</p><small>Trip ID: ${esc(t.id)}</small><div class="modal-actions"><button class="secondary" data-trip="${esc(t.id)}">View trip</button><button class="secondary admin-delete-trip" data-community="delete-trip" data-id="${esc(t.id)}">Delete trip</button></div></article>`).join("")}${tripPage.offset ? `<button class="secondary" data-trip-offset="${Math.max(0, tripPage.offset - 25)}">Previous trips</button>` : ""}${tripPage.nextOffset !== null ? `<button class="secondary" data-trip-offset="${tripPage.nextOffset}">More trips</button>` : ""}</section>
+  <h3>Safety reports</h3><p>Reports and decision notes are private to administrators. Hiding a trip pauses public discovery and new joins; participant history is retained. Hiding a statement preserves the personal block.</p>${form("report-filter", `<label>Report type<select name="kind">${options(["trip", "block"], new URLSearchParams(query).get("kind") || "trip")}</select></label><label>Status<select name="reportStatus"><option value="">All</option>${options(["new", "in_progress", "resolved", "dismissed"], new URLSearchParams(query).get("reportStatus") || "")}</select></label>`)}<p>${moderation.total} reports</p>${moderation.reports.map((f) => `<article class="request-item"><h4>${esc(f.trip?.title || "Trip record unavailable")} · ${esc(f.status)}</h4><p>Report: ${esc(f.reason)} ${esc(f.note || "")}</p>${f.statement ? `<p>Reported statement (${f.statement.hidden ? "hidden" : "visible to trip participants"}): ${esc(f.statement.reason)}</p>` : `<p>${!f.trip ? "Trip no longer available" : f.trip.hidden ? "Trip hidden from public discovery" : "Trip visible"}</p>`}<p>Reporter ID: ${esc(f.reporter_id)}</p>${f.decision_reason ? `<p>Last decision: ${esc(f.decision_reason)}</p>` : ""}${form("report-decision", hidden("kind", new URLSearchParams(query).get("kind") || "trip") + hidden("id", f.id) + hidden("revision", f.revision) + `<label>Status<select name="status">${options(["new", "in_progress", "resolved", "dismissed"], f.status)}</select></label><label>Visibility action<select name="action">${options(["none", "hide", "restore"])}</select></label>` + message("reason", "Private decision reason (required)", "", 10))}</article>`).join("")}${moderation.offset ? `<button class="secondary" data-report-offset="${Math.max(0, moderation.offset - 25)}">Previous reports</button>` : ""}${moderation.nextOffset !== null ? `<button class="secondary" data-report-offset="${moderation.nextOffset}">More reports</button>` : ""}
   <h3>Feedback</h3>${form("feedback-filter", `<label>Category<select name="category"><option value="">All</option>${options(categories)}</select></label><label>Status<select name="status"><option value="">All</option>${options(["New", "In Progress", "Resolved"])}</select></label>`)}${r.feedback.map((f) => `<article class="request-item"><strong>${esc(f.name)} · ${esc(f.email)} · ${esc(f.category)}</strong><p>${esc(f.message)}</p>${form("feedback-update", hidden("id", f.id) + `<label class="form-field">Status<select name="status">${options(["New", "In Progress", "Resolved"], f.status)}</select></label>` + message("notes", "Internal notes", f.notes, 0))}</article>`).join("")}
   <h3>Testimonials</h3>${r.testimonials.map((t) => `<article class="request-item"><strong>${esc(t.name)} · ${esc(t.status)}</strong><p>${esc(t.message)}</p>${form("testimonial-decision", hidden("id", t.id) + `<select name="status">${options(["approved", "rejected", "hidden"], t.status)}</select><label class="check-label"><input name="featured" type="checkbox" ${t.featured ? "checked" : ""}>Feature on homepage</label>`)}</article>`).join("")}
   <h3>Organizer reviews</h3>${r.reviews.map((v) => `<article class="request-item"><p>${esc(v.body)}</p>${form("review-moderate", hidden("id", v.id) + `<label class="check-label"><input name="hidden" type="checkbox" ${v.hidden ? "checked" : ""}>Hide from public</label>` + field("reason", "Moderation reason"))}</article>`).join("")}
@@ -339,6 +341,16 @@
         filters.elements.status.value = values.get("status") || "";
       }
     }
+  }
+  async function confirmTripDeletion(id) {
+    const { trip } = await c.api("/admin/trips/" + encodeURIComponent(id));
+    frame(
+      "Delete this trip permanently?",
+      `<p><strong>${esc(trip.title)}</strong><br>${esc(trip.from_city)} → ${esc(trip.destination)} · ${esc(trip.starts_on)} – ${esc(trip.ends_on)}</p><p>This cannot be undone. The trip, memberships, participation history, requests, saved entries, messages, reviews, testimonials and location index will be removed. Accounts, personal blocks, safety reports and audit records remain. The organizer, current members and pending applicants will receive an in-app removal notice.</p><p>Trip ID: <strong>${esc(trip.id)}</strong></p>${form("delete-trip", hidden("id", trip.id) + hidden("revision", trip.revision) + field("confirmationTripId", "Type the exact trip ID to confirm", "").replace(" required", ` required pattern="${esc(trip.id)}" maxlength="36"`) + message("reason", "Private deletion reason (required)", "", 10), "Permanently delete trip")}<button class="secondary" type="button" data-dismiss-deletion>Keep trip</button>`,
+    );
+    document
+      .querySelector('[data-community-form="delete-trip"] [type="submit"]')
+      .classList.add("admin-delete-trip");
   }
   async function feedback(opts = {}) {
     frame(
@@ -426,6 +438,7 @@
             (name === "admin" ? "?offset=" + (b.dataset.offset || 0) : ""),
         );
       }
+      if (name === "delete-trip") await confirmTripDeletion(b.dataset.id);
       if (name === "testimonial") await testimonial(+(b.dataset.offset || 0));
       if (name === "profile") await organizer(b.dataset.id);
       if (name === "edit") await edit(b.dataset.id);
@@ -455,7 +468,9 @@
     const d = Object.fromEntries(new FormData(f)),
       action = f.dataset.communityForm;
     try {
-      if (["feedback-filter", "report-filter"].includes(action)) {
+      if (
+        ["feedback-filter", "report-filter", "trip-filter"].includes(action)
+      ) {
         await navigate(
           "/admin?" +
             new URLSearchParams(Object.entries(d).filter(([, v]) => v)),
@@ -537,6 +552,15 @@
         path = "/testimonials";
         body = { tripId: d.tripId, message: d.message, consent: !!d.consent };
       }
+      if (action === "delete-trip") {
+        path = "/admin/trips/" + d.id;
+        method = "DELETE";
+        body = {
+          confirmationTripId: d.confirmationTripId,
+          reason: d.reason,
+          revision: +d.revision,
+        };
+      }
       if (action === "report-decision") {
         path = "/admin/reports/" + d.kind + "/" + d.id;
         method = "PUT";
@@ -563,13 +587,19 @@
         body = { hidden: !!d.hidden, reason: d.reason };
       }
       const saved = await c.api(path, { method, body });
+      if (action === "delete-trip") {
+        c.forgetTrip(d.id);
+        c.close();
+      }
       await c.refresh();
       if (location.pathname !== originPage || (opts.valid && !opts.valid()))
         return;
       c.toast(
         action === "reindex"
           ? `Processed ${saved.processed}; indexed ${saved.indexed}; unresolved ${saved.unresolved}. Unresolved places remain excluded.`
-          : "Saved successfully.",
+          : action === "delete-trip"
+            ? "Trip permanently deleted. The deletion has been audited."
+            : "Saved successfully.",
       );
       if (
         ["edit", "cancel", "remove"].includes(action) &&
@@ -584,6 +614,7 @@
           "decision",
           "feedback-update",
           "report-decision",
+          "delete-trip",
           "testimonial-decision",
           "review-moderate",
           "override",
@@ -620,4 +651,15 @@ document.addEventListener("click", (event) => {
   params.set("reportOffset", button.dataset.reportOffset);
   window.history.pushState(null, "", "/admin?" + params);
   window.dispatchEvent(new PopStateEvent("popstate"));
+});
+
+document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-dismiss-deletion]"))
+    document.querySelector("#modal .modal-close").click();
+  const button = event.target.closest("[data-trip-offset]");
+  if (!button) return;
+  const params = new URLSearchParams(location.search);
+  params.set("tripOffset", button.dataset.tripOffset);
+  history.pushState(null, "", "/admin?" + params);
+  dispatchEvent(new PopStateEvent("popstate"));
 });

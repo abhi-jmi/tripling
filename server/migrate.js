@@ -82,6 +82,7 @@ const indexes = {
   ],
   trips: [
     [{ id: 1 }, { unique: true }],
+    [{ created_at: -1, id: 1 }, {}],
     [{ status: 1, starts_on: 1 }, {}],
     [{ status: 1, starts_on: 1, id: 1 }, {}],
     [{ budget_min: 1, starts_on: 1, id: 1 }, {}],
