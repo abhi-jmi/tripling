@@ -1,6 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tripling HTTPS frontend and API on ECS Fargate. No resources are created until explicitly deployed.
 Parameters:
+  PasswordResetFromEmail:
+    Type: String
+    Default: ""
+    Description: Optional verified Amazon SES sender in this region; empty disables password recovery email
+    AllowedPattern: '^$|[^@\s]+@[^@\s]+\.[^@\s]+'
   OrganizerVerificationRequired:
     Type: String
     Default: "false"
@@ -70,6 +75,7 @@ Parameters:
     MinLength: 1
     MaxLength: 200
 Conditions:
+  PasswordEmailEnabled: !Not [!Equals [!Ref PasswordResetFromEmail, ""]]
   VerificationKeyEnabled: !Not [!Equals [!Ref VerificationKeySecretArn, ""]]
   PlacesEnabled: !Not [!Equals [!Ref GooglePlacesSecretArn, ""]]
   LegacyRollbackEnabled: !Not [!Equals [!Ref LegacyDatabaseSecretArn, ""]]
@@ -152,6 +158,15 @@ Resources:
                 - Effect: Allow
                   Action: secretsmanager:GetSecretValue
                   Resource: !Ref GooglePlacesSecretArn
+                - !Ref AWS::NoValue
+              - !If
+                - PasswordEmailEnabled
+                - Effect: Allow
+                  Action: ses:SendEmail
+                  Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+                  Condition:
+                    StringEquals:
+                      ses:FromAddress: !Ref PasswordResetFromEmail
                 - !Ref AWS::NoValue
               - !If
                 - GoogleEnabled
@@ -264,6 +279,8 @@ Resources:
           PortMappings:
             - ContainerPort: 3000
           Environment:
+            - Name: PASSWORD_RESET_FROM_EMAIL
+              Value: !Ref PasswordResetFromEmail
             - Name: ORGANIZER_VERIFICATION_REQUIRED
               Value: !Ref OrganizerVerificationRequired
             - Name: TRIPLING_ADMIN_USER_IDS

@@ -8,6 +8,7 @@ const fail = (s, m) => {
 export async function tripNotices(db, tripIds, target = null) {
   const filter = {
     ended_at: null,
+    notice_hidden: { $ne: true },
     context_trip_id: { $in: tripIds },
     ...(target
       ? { $or: [{ blocker_id: target }, { blocked_id: target }] }

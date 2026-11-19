@@ -72,140 +72,201 @@
           <p class="login-subtitle" id="auth-subtitle">
             Welcome back. Your next adventure is waiting.
           </p>
-          <div class="auth-tabs" role="group" aria-label="Account options">
-            <button type="button" class="selected" data-auth-mode="login">
-              Log in</button
-            ><button type="button" data-auth-mode="signup">
-              Create account
-            </button>
-          </div>
-          <p id="login-context" class="login-context" role="status" hidden></p>
-          <a
-            id="google-signin"
-            class="secondary google-signin"
-            href="/api/auth/google/start"
-            hidden
-            >Continue with Google</a
-          >
-          <p id="google-unavailable" class="password-help" hidden>
-            Google sign-in is not configured yet. Use email and password.
-          </p>
-          <form id="login-form">
-            <div id="signup-names" class="form-grid" hidden>
-              <label class="form-field"
-                >First name<input
-                  id="signup-first-name"
-                  name="firstName"
-                  maxlength="50"
-                  autocomplete="given-name"
-                  disabled /></label
-              ><label class="form-field"
-                >Last name<input
-                  id="signup-last-name"
-                  name="lastName"
-                  maxlength="50"
-                  autocomplete="family-name"
-                  disabled
-              /></label>
-            </div>
-            <label class="form-field" for="login-email">Email address</label>
-            <div class="email-input-wrap">
-              <span data-icon="mail"></span
-              ><input
-                type="email"
-                id="login-email"
-                name="email"
-                placeholder="you@example.com"
-                autocomplete="email"
-                inputmode="email"
-                maxlength="254"
-                required
-              />
-            </div>
-            <label class="form-field auth-password-label" for="login-password"
-              >Password</label
-            >
-            <div class="email-input-wrap">
-              <span data-icon="lock"></span
-              ><input
-                type="password"
-                id="login-password"
-                name="password"
-                autocomplete="current-password"
-                maxlength="128"
-                required
-                placeholder="Your password"
-              /><button
-                type="button"
-                class="password-toggle"
-                data-toggle-password="login-password"
-                aria-label="Show password"
-                aria-pressed="false"
-              >
-                Show
+          <div id="password-login-content">
+            <div class="auth-tabs" role="group" aria-label="Account options">
+              <button type="button" class="selected" data-auth-mode="login">
+                Log in</button
+              ><button type="button" data-auth-mode="signup">
+                Create account
               </button>
             </div>
-            <div id="confirm-password-field" hidden>
-              <label
-                class="form-field auth-password-label"
-                for="confirm-password"
-                >Confirm password</label
+            <p
+              id="login-context"
+              class="login-context"
+              role="status"
+              hidden
+            ></p>
+            <a
+              id="google-signin"
+              class="secondary google-signin"
+              href="/api/auth/google/start"
+              hidden
+              >Continue with Google</a
+            >
+            <p id="google-unavailable" class="password-help" hidden>
+              Google sign-in is not configured yet. Use email and password.
+            </p>
+            <form id="login-form">
+              <div id="signup-names" class="form-grid" hidden>
+                <label class="form-field"
+                  >First name<input
+                    id="signup-first-name"
+                    name="firstName"
+                    maxlength="50"
+                    autocomplete="given-name"
+                    disabled /></label
+                ><label class="form-field"
+                  >Last name<input
+                    id="signup-last-name"
+                    name="lastName"
+                    maxlength="50"
+                    autocomplete="family-name"
+                    disabled
+                /></label>
+              </div>
+              <label class="form-field" for="login-email">Email address</label>
+              <div class="email-input-wrap">
+                <span data-icon="mail"></span
+                ><input
+                  type="email"
+                  id="login-email"
+                  name="email"
+                  placeholder="you@example.com"
+                  autocomplete="email"
+                  inputmode="email"
+                  maxlength="254"
+                  required
+                />
+              </div>
+              <label class="form-field auth-password-label" for="login-password"
+                >Password</label
               >
               <div class="email-input-wrap">
                 <span data-icon="lock"></span
                 ><input
                   type="password"
-                  id="confirm-password"
-                  name="confirmPassword"
-                  autocomplete="new-password"
+                  id="login-password"
+                  name="password"
+                  autocomplete="current-password"
                   maxlength="128"
-                  placeholder="Enter your password again"
-                  disabled
-                />
+                  required
+                  placeholder="Your password"
+                /><button
+                  type="button"
+                  class="password-toggle"
+                  data-toggle-password="login-password"
+                  aria-label="Show password"
+                  aria-pressed="false"
+                >
+                  Show
+                </button>
               </div>
-              <p class="password-help">
-                Use at least 10 characters. A longer passphrase works well.
-              </p>
-              <label class="check-label"
-                ><input
-                  type="checkbox"
-                  name="adult"
-                  id="signup-adult"
-                  disabled
-                />
-                I confirm I am 18 or older.</label
-              ><label class="check-label legal-consent"
-                ><input type="checkbox" id="signup-legal" disabled />
-                <span
-                  >I agree to the
-                  <a href="/terms" target="_blank" rel="noopener"
-                    >Terms and Conditions</a
-                  >
-                  and acknowledge the
-                  <a href="/privacy" target="_blank" rel="noopener"
-                    >Privacy Policy</a
-                  >.</span
-                ></label
+              <div id="confirm-password-field" hidden>
+                <label
+                  class="form-field auth-password-label"
+                  for="confirm-password"
+                  >Confirm password</label
+                >
+                <div class="email-input-wrap">
+                  <span data-icon="lock"></span
+                  ><input
+                    type="password"
+                    id="confirm-password"
+                    name="confirmPassword"
+                    autocomplete="new-password"
+                    maxlength="128"
+                    placeholder="Enter your password again"
+                    disabled
+                  />
+                </div>
+                <p class="password-help">
+                  Use at least 10 characters. A longer passphrase works well.
+                </p>
+                <label class="check-label"
+                  ><input
+                    type="checkbox"
+                    name="adult"
+                    id="signup-adult"
+                    disabled
+                  />
+                  I confirm I am 18 or older.</label
+                ><label class="check-label legal-consent"
+                  ><input type="checkbox" id="signup-legal" disabled />
+                  <span
+                    >I agree to the
+                    <a href="/terms" target="_blank" rel="noopener"
+                      >Terms and Conditions</a
+                    >
+                    and acknowledge the
+                    <a href="/privacy" target="_blank" rel="noopener"
+                      >Privacy Policy</a
+                    >.</span
+                  ></label
+                >
+              </div>
+              <p id="login-error" class="form-error" role="alert" hidden></p>
+              <button
+                type="submit"
+                id="auth-submit"
+                class="primary login-submit"
               >
-            </div>
-            <p id="login-error" class="form-error" role="alert" hidden></p>
-            <button type="submit" id="auth-submit" class="primary login-submit">
-              Log in <span data-icon="arrow-right"></span>
+                Log in <span data-icon="arrow-right"></span>
+              </button>
+            </form>
+            <button type="button" class="recovery-link" data-recovery="forgot">
+              Forgot password?
             </button>
-          </form>
-          <p class="login-preview-note">
-            <span data-icon="shield"></span
-            ><span
-              >Your email stays private. Only your traveler name is shown on
-              trips.</span
-            >
-          </p>
-          <div class="login-divider">
-            <span>or take a look around first</span>
+            <p class="login-preview-note">
+              <span data-icon="shield"></span
+              ><span
+                >Your email stays private. Only your traveler name is shown on
+                trips.</span
+              >
+            </p>
+            <div class="login-divider">
+              <span>or take a look around first</span>
+            </div>
+            <button class="login-guest" data-action="browse-guest">
+              Explore as a guest <span data-icon="arrow-up-right"></span>
+            </button>
           </div>
-          <button class="login-guest" data-action="browse-guest">
-            Explore as a guest <span data-icon="arrow-up-right"></span>
-          </button>
+          <section
+            id="password-recovery-panel"
+            hidden
+            aria-label="Password recovery"
+          >
+            <form id="password-recovery-form">
+              <label class="form-field"
+                >Account email<input
+                  name="email"
+                  type="email"
+                  required
+                  maxlength="254"
+                  autocomplete="email"
+              /></label>
+              <p>
+                Request a single-use link to reset your password. Links expire
+                after 30 minutes.
+              </p>
+              <button class="primary" type="submit">Send reset link</button>
+            </form>
+            <form id="password-reset-form" hidden>
+              <label class="form-field"
+                >New password<input
+                  name="password"
+                  type="password"
+                  required
+                  minlength="10"
+                  maxlength="128"
+                  autocomplete="new-password"
+              /></label>
+              <label class="form-field"
+                >Confirm new password<input
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  minlength="10"
+                  maxlength="128"
+                  autocomplete="new-password"
+              /></label>
+              <button class="primary" type="submit">Save new password</button>
+            </form>
+            <p id="recovery-status" role="status"></p>
+            <p id="recovery-error" class="form-error" role="alert" hidden></p>
+            <button type="button" class="recovery-link" data-recovery="login">
+              Back to sign in
+            </button>
+          </section>
           <div class="login-trust">
             <span data-icon="lock"></span> Your plans stay with your account.
           </div>

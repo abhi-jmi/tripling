@@ -152,8 +152,121 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 4500);
 }
+let feedIds = [],
+  feedTotal = 0,
+  feedNext = null,
+  feedKey = "",
+  feedVersion = 0,
+  feedLoading = false;
+const feedViews = ["discover", "past-trips", "my-trips", "saved"];
+function feedParams() {
+  const requested = feedViews.includes(view) ? view : "discover";
+  const p = new URLSearchParams({
+    view: requested,
+    limit: "6",
+    sort: $("#sort").value === "budget" ? "budget" : "date",
+  });
+  if (requested === "my-trips") p.set("lifecycle", $("#my-trip-status").value);
+  if (requested === "discover") {
+    for (const [key, value] of [
+      ["q", $("#destination").value.trim()],
+      ["origin", $("#origin").value.trim()],
+      ["when", $("#departure").value],
+      ["style", selectedStyle],
+      [
+        "category",
+        !["All trips", "Women only"].includes(category) ? category : "",
+      ],
+      ["mode", travelMode],
+    ])
+      if (value) p.set(key, value);
+    p.set("budget", String(maxBudget));
+    if (womenFilter || category === "Women only") p.set("women", "true");
+  }
+  return p;
+}
+function cacheTrips(rows) {
+  const map = new Map(data.trips.map((t) => [t.id, t]));
+  for (const row of rows) map.set(row.id, row);
+  data.trips = [...map.values()];
+}
+async function ensureTrip(id) {
+  const { trip } = await api("/trips/" + encodeURIComponent(id));
+  cacheTrips([trip]);
+  return trip;
+}
+async function loadFeed(append = false) {
+  const params = feedParams(),
+    key = params.toString(),
+    version = ++feedVersion;
+  if (append && feedNext === null) return;
+  if (append) params.set("offset", String(feedNext));
+  feedKey = key;
+  feedLoading = true;
+  if (!append) {
+    feedIds = [];
+    feedTotal = 0;
+    feedNext = null;
+  }
+  render();
+  try {
+    const page = await api("/trips?" + params);
+    if (
+      version !== feedVersion ||
+      key !== feedParams().toString() ||
+      activeNearby()
+    )
+      return;
+    cacheTrips(page.trips);
+    feedIds = [
+      ...new Set([...(append ? feedIds : []), ...page.trips.map((t) => t.id)]),
+    ];
+    feedTotal = page.total;
+    feedNext = page.nextOffset;
+    visibleCount = feedIds.length;
+  } finally {
+    if (version === feedVersion) {
+      feedLoading = false;
+      render();
+    }
+  }
+}
+async function cacheNearby(ids) {
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const page = await api(
+      "/trips?" +
+        new URLSearchParams({
+          view: "all",
+          ids: ids.slice(offset, offset + 100).join(","),
+          limit: "100",
+        }),
+    );
+    cacheTrips(page.trips);
+  }
+}
 async function refresh() {
-  data = await api("/bootstrap");
+  const params = feedParams(),
+    oldUser = data.user?.id,
+    previous = data.trips;
+  // On initial load the hash determines the requested feed without a sign-in detour.
+  if (!bootReady && feedViews.includes(location.hash.slice(1)))
+    params.set("view", location.hash.slice(1));
+  const version = ++feedVersion;
+  data = await api("/bootstrap?" + params);
+  const initialIds = data.trips.map((t) => t.id);
+  if (oldUser === data.user?.id)
+    cacheTrips(previous.filter((t) => !data.trips.some((n) => n.id === t.id)));
+  if (version === feedVersion) {
+    feedIds = initialIds;
+    feedTotal = data.feed.total;
+    feedNext = data.feed.nextOffset;
+    feedKey = params.toString();
+    feedLoading = false;
+    if (activeNearby())
+      await cacheNearby([
+        ...(activeNearby().originDistances || activeNearby().distances).keys(),
+      ]);
+  }
   auth.setUser(data.user);
   window.TriplingCommunity.init({
     api,
@@ -287,8 +400,89 @@ function renderCommunityPage(title, body) {
   window.scrollTo({ top: 0, behavior: "instant" });
   $("#community-page-title").focus({ preventScroll: true });
 }
+const participationPolicy =
+  "Confirmed participants, including the organizer, can leave more than 24 hours before departure. At or within 24 hours, or if a legacy departure time is missing, contact support for an exceptional cancellation. Pending join requests can be withdrawn at any time. Completed or canceled memberships can be ended.";
+const completionPolicy =
+  "Trips become completed automatically on the day after the return date, using India time (Asia/Kolkata). No manual completion action is needed. Eligible confirmed participants can then leave reviews and submit a testimonial for approval.";
+let resetToken = "";
+function showRecovery(mode, token = "") {
+  view = "login";
+  if (modal.open) closeModal();
+  $("#app-shell").hidden = true;
+  $("#login-page").hidden = false;
+  document.body.classList.add("auth-screen");
+  $("#password-login-content").hidden = true;
+  $("#password-recovery-panel").hidden = false;
+  $("#password-recovery-form").hidden = mode !== "forgot";
+  $("#password-reset-form").hidden = mode !== "reset";
+  $("#recovery-status").textContent = "";
+  $("#recovery-error").hidden = true;
+  $("#login-title").textContent =
+    mode === "forgot" ? "Recover your account." : "Choose a new password.";
+  $("#auth-subtitle").textContent =
+    "Your trips and profile will stay with your account.";
+  document.title = "Password recovery — Tripling";
+  resetToken = token;
+  if (mode === "forgot")
+    api("/auth/password-reset/config")
+      .then((config) => {
+        if (location.hash !== "#forgot-password" || config.available) return;
+        $("#password-recovery-form").hidden = true;
+        $("#recovery-status").textContent =
+          "Password recovery email is not configured yet. Contact abhishek@tripling.in for help with your account.";
+      })
+      .catch(() => {});
+  // Remove a reset secret from browser history/referrers as soon as it is read.
+  if (mode === "reset") {
+    history.replaceState(null, "", "/#reset-password");
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+      $("#password-reset-form").hidden = true;
+      $("#recovery-status").textContent =
+        "Open the full link from your email, or request a new reset link using Forgot password on the sign-in page.";
+    }
+  }
+}
+document.addEventListener("submit", async (event) => {
+  const form = event.target;
+  if (!["password-recovery-form", "password-reset-form"].includes(form.id))
+    return;
+  event.preventDefault();
+  const button = form.querySelector("[type=submit]");
+  button.disabled = true;
+  $("#recovery-error").hidden = true;
+  try {
+    const fields = Object.fromEntries(new FormData(form));
+    const completing = form.id === "password-reset-form";
+    const result = await api(
+      completing
+        ? "/auth/password-reset/complete"
+        : "/auth/password-reset/request",
+      {
+        method: "POST",
+        body: completing ? { ...fields, token: resetToken } : fields,
+      },
+    );
+    $("#recovery-status").textContent = result.message;
+    form.reset();
+    if (completing) {
+      resetToken = "";
+      form.hidden = true;
+      auth.setUser(null);
+      await refresh();
+    }
+  } catch (error) {
+    $("#recovery-error").textContent = error.message;
+    $("#recovery-error").hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+});
 async function renderLocation() {
   const hash = location.hash.slice(1);
+  if (hash === "forgot-password") return showRecovery("forgot");
+  if (hash.startsWith("reset-password="))
+    return showRecovery("reset", hash.slice("reset-password=".length));
+  if (hash === "reset-password") return showRecovery("reset", resetToken);
   if (hash === "sso-complete") {
     setView("discover");
     return completeGoogle().catch(errorMessage);
@@ -307,6 +501,9 @@ async function renderLocation() {
   setView(hash || "discover");
 }
 function setView(next) {
+  $("#password-login-content").hidden = false;
+  $("#password-recovery-panel").hidden = true;
+  $("#login-title").innerHTML = "Good company<br>starts with a hello.";
   window.TriplingCommunity.invalidate();
   $("#community-page").hidden = true;
   $(".explore").hidden = false;
@@ -390,7 +587,7 @@ function setView(next) {
     if (el.dataset.view === view) el.setAttribute("aria-current", "page");
     else el.removeAttribute("aria-current");
   });
-  visibleCount = 6;
+  visibleCount = feedIds.length || 6;
   render();
 }
 function card(t) {
@@ -401,7 +598,20 @@ function card(t) {
   return `<article class="trip-card"><div class="card-image"><img src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} travel inspiration" loading="lazy"><span class="match-badge">${icon(t.women ? "shield" : "compass")} ${t.lifecycle === "completed" ? `Completed · ${t.reviewCount} reviews` : !t.organizerId ? "Inactive plan" : t.status === "canceled" ? "Canceled" : t.women ? "Women-only crew" : t.seats ? "Open to join" : "Crew complete"}</span><button class="save-button ${saved ? "saved" : ""}" data-save="${esc(t.id)}" aria-label="${saved ? "Unsave" : "Save"} ${esc(t.title)}" aria-pressed="${saved}">${icon("bookmark")}</button><span class="image-label">${icon("pin")} ${esc(t.destination)}</span></div><div class="card-content"><div class="card-tags">${t.tags.map((tag) => `<span class="tag ${tag === "Women only" ? "women" : ""}">${esc(tag)}</span>`).join("")}</div><button class="card-title" data-trip="${esc(t.id)}">${esc(t.title)}</button>${data.features?.organizerVerificationRequired && t.verifiedOrganizer ? '<p class="verified-organizer">✓ Verified Organizer</p>' : ""}${t.organizerRating ? `<p class="nearby-distance">Organizer ${t.organizerRating.toFixed(1)}/5 · ${t.organizerReviewCount} reviews</p>` : ""}<button class="report-link" data-community="profile" data-id="${esc(t.organizerId || t.ownerId)}">Organizer profile & ratings</button><p class="card-route">${esc(t.from)} → ${esc(t.destination)}</p>${t.departureUtc ? `<p class="nearby-distance">Departs ${esc(new Date(t.departureUtc).toLocaleString())} (${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)})</p>` : '<p class="nearby-distance">Departure time needs confirmation.</p>'}${activeNearby()?.distances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().distances.get(t.id)} km from your searched city · straight-line</p>` : ""}${activeNearby()?.originDistances?.has(t.id) ? `<p class="nearby-distance">${activeNearby().originDistances.get(t.id)} km from searched starting point · straight-line</p>` : ""}<div class="card-info"><span>${icon("calendar")} ${range(t)}</span><span>${icon("clock")} ${duration(t)} days</span></div><div class="card-cost"><strong>${money(t.min)}–${money(t.max).slice(1)}</strong><span>/ person</span><span>${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div class="card-footer"><span class="avatar host-avatar">${esc(t.initials)}</span><div class="host-name">Planned by <strong>${esc(owned ? "you" : t.host)}</strong><span>${t.isMember ? "Your travel crew" : "Community traveler"}</span></div><button class="card-cta" data-trip="${esc(t.id)}">View trip ${icon("arrow-up-right")}</button></div>${view === "my-trips" ? `<div class="my-card-status"><span class="request-status">${t.status === "canceled" ? "Canceled" : owned ? "Organizer" : t.isMember ? "Joined" : request?.status === "pending" ? "Awaiting approval" : "Left trip"}</span>${owned && t.end >= today() ? `<button data-incoming="${esc(t.id)}">Requests (${incoming})</button>` : ""}${t.isMember ? `<button class="leave-trip" data-leave="${esc(t.id)}" ${t.cancellationAllowed !== true ? 'disabled aria-describedby="leave-note-' + esc(t.id) + '"' : ""}>Leave trip</button>` : request ? `<button data-leave="${esc(t.id)}">${request.status === "accepted" ? "Leave trip" : "Cancel request"}</button>` : ""}</div>${t.isMember && t.cancellationAllowed !== true ? `<p class="participation-notice" id="leave-note-${esc(t.id)}">${t.departureUtc ? "Cancellation is not allowed within 24 hours of the scheduled trip departure." : "This trip’s departure time needs confirmation."} <a href="mailto:abhishek@tripling.in">Please contact support for exceptional requests.</a></p>` : ""}${t.isMember ? `<button class="card-chat" data-chat="${esc(t.id)}">${icon("users")} Open group chat ${icon("arrow-right")}</button>` : ""}` : ""}</div></article>`;
 }
 function render() {
-  let list = trips();
+  if (
+    bootReady &&
+    feedViews.includes(view) &&
+    !activeNearby() &&
+    feedKey !== feedParams().toString()
+  ) {
+    loadFeed().catch(errorMessage);
+    return;
+  }
+  const shown =
+    view === "discover" && activeNearby()
+      ? [...(activeNearby().originDistances || activeNearby().distances).keys()]
+      : feedIds;
+  let list = trips().filter((t) => shown.includes(t.id));
   if (view === "saved") list = list.filter((t) => state.saved.includes(t.id));
   else if (view === "my-trips")
     list = list.filter(
@@ -470,10 +680,15 @@ function render() {
         ? "Create a trip or request to join a crew."
         : "No trips match yet. Try different filters, or create your own trip.";
   $("#results-count").innerHTML =
-    `<strong>${activeNearby()?.total ?? list.length} ${(activeNearby()?.total ?? list.length) === 1 ? "trip" : "trips"}</strong> ${view === "saved" ? "saved for later" : view === "my-trips" ? "in your travel plans" : "with a story to share"}`;
-  $("#load-more-wrap").hidden = view !== "discover" || !list.length;
-  $("#load-more").hidden =
-    (activeNearby()?.total ?? list.length) <= visibleCount;
+    `<strong>${activeNearby()?.total ?? feedTotal} ${(activeNearby()?.total ?? feedTotal) === 1 ? "trip" : "trips"}</strong> ${view === "saved" ? "saved for later" : view === "my-trips" ? "in your travel plans" : "with a story to share"}`;
+  $("#load-more-wrap").hidden =
+    !feedViews.includes(view) || (!list.length && !feedLoading);
+  $("#load-more").hidden = activeNearby()
+    ? activeNearby().total <= visibleCount
+    : feedNext === null;
+  $("#load-more").disabled = feedLoading;
+  $("#trip-grid").setAttribute("aria-busy", String(feedLoading));
+  if (feedLoading) $("#empty p").textContent = "Loading trips…";
   const count = [
     maxBudget < 1000000,
     !!travelMode,
@@ -495,8 +710,11 @@ function render() {
   $("#body-mode").value = travelMode;
   $("#body-women").checked = womenFilter;
 
-  $("#request-count").textContent = state.created.length + data.requests.length;
-  $("#request-count").hidden = !(state.created.length + data.requests.length);
+  $("#request-count").textContent =
+    (data.createdCount || 0) + data.requests.length;
+  $("#request-count").hidden = !(
+    (data.createdCount || 0) + data.requests.length
+  );
   $(".profile-button").hidden = !data.user;
   $(".login-nav").hidden = !!data.user;
   $(".notifications-nav").hidden = !data.user;
@@ -508,14 +726,17 @@ function render() {
   $("#notification-count").textContent = unread;
   icons($("#trip-grid"));
 }
+let detailRequest = 0;
 async function detail(id) {
-  const t = trips().find((t) => t.id === id);
-  if (!t) return;
+  const request = ++detailRequest,
+    intentVersion = modalVersion;
+  const t = await ensureTrip(id);
+  if (request !== detailRequest || intentVersion !== modalVersion) return;
   currentTrip = id;
   const owned = t.organizerId === data.user?.id,
-    request = state.requests[id];
+    joinRequest = state.requests[id];
   openModal(
-    `<img class="modal-photo" src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} scenery"><div class="modal-pad"><div class="detail-tags">${t.tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("")}</div><h2 id="modal-title">${esc(t.title)}</h2><p class="detail-lead">${esc(t.description)}</p><div class="detail-grid"><div>${icon("route")}<span><small>The route</small>${esc(t.from)} → ${esc(t.destination)}</span></div><div>${icon("calendar")}<span><small>Travel dates</small>${range(t)}</span></div><div>${icon("users")}<span><small>Your crew</small>${t.total - t.seats} going · ${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div>${icon("compass")}<span><small>Travel mode</small>${esc(t.mode)}</span></div></div><div class="detail-section"><h3>The loose plan</h3><p>${esc(t.plan || "Get to know the crew and decide the details together.")}</p></div><div class="detail-section"><h3>Budget for the journey</h3><p>${money(t.min)}–${money(t.max)} per person, estimated. Confirm costs together. Tripling does not collect payments.</p></div><div class="detail-section"><h3>Shared ground rules</h3><p>${esc(t.rules || "Respect personal boundaries, meet in public, and agree on costs before booking.")}</p></div><div class="detail-host"><span class="avatar">${esc(t.initials)}</span><div><strong>Planned by ${esc(t.host)}</strong><p>Community traveler</p></div></div><p class="notice">${t.women ? "Women-only membership is based on self-declaration. " : ""}A profile is not a guarantee of safety. Get to know your crew before committing.</p><div class="modal-actions">${t.isMember ? `<button class="primary" data-chat="${esc(id)}">Open group chat ${icon("users")}</button>` : t.end < today() || !t.organizerId || t.status !== "open" ? '<button class="primary" disabled>Joining closed</button>' : request ? '<button class="primary" disabled>Waiting for organizer approval</button>' : t.seats > 0 ? `<button class="primary" data-join="${esc(id)}">Request to join ${icon("arrow-right")}</button>` : '<button class="primary" disabled>No spots available</button>'}<button class="secondary" data-save="${esc(id)}">${icon("bookmark")} ${state.saved.includes(id) ? "Saved" : "Save trip"}</button></div>${owned && t.end >= today() ? `<button class="secondary" data-incoming="${esc(id)}">Manage join requests</button>` : ""}${t.participated ? `<button class="secondary" data-crew="${esc(id)}">Travelers & trip notices</button>` : ""}${t.isMember || request ? `<button class="report-link" data-leave="${esc(id)}">${t.isMember ? "Leave this trip" : "Cancel my request"}</button>` : ""}<p class="notice">Created by ${esc(t.creator)}. Trip records are retained. Everyone, including the organizer, can leave.</p><section class="detail-section" id="trip-reviews"><h3>Travel reviews</h3><p>Loading reviews…</p></section>${t.participated && t.status === "open" && t.end < today() ? `<button class="secondary" data-review="${esc(id)}">Review a traveler</button>` : ""}${!owned ? `<button class="report-link" data-report="${esc(id)}">Report or hide this trip</button>` : ""}</div>`,
+    `<img class="modal-photo" src="assets/${esc(t.image)}.jpg" alt="${esc(t.destination)} scenery"><div class="modal-pad"><div class="detail-tags">${t.tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("")}</div><h2 id="modal-title">${esc(t.title)}</h2><p class="detail-lead">${esc(t.description)}</p><div class="detail-grid"><div>${icon("route")}<span><small>The route</small>${esc(t.from)} → ${esc(t.destination)}</span></div><div>${icon("calendar")}<span><small>Travel dates</small>${range(t)}</span></div><div>${icon("users")}<span><small>Your crew</small>${t.total - t.seats} going · ${t.end < today() ? `${t.reviewCount} reviews${t.averageRating ? ` · ${t.averageRating}/5` : ""}` : `${t.seats} spots open`}</span></div><div>${icon("compass")}<span><small>Travel mode</small>${esc(t.mode)}</span></div></div><div class="detail-section"><h3>The loose plan</h3><p>${esc(t.plan || "Get to know the crew and decide the details together.")}</p></div><div class="detail-section"><h3>Budget for the journey</h3><p>${money(t.min)}–${money(t.max)} per person, estimated. Confirm costs together. Tripling does not collect payments.</p></div><div class="detail-section"><h3>Shared ground rules</h3><p>${esc(t.rules || "Respect personal boundaries, meet in public, and agree on costs before booking.")}</p></div><div class="detail-host"><span class="avatar">${esc(t.initials)}</span><div><strong>Planned by ${esc(t.host)}</strong><p>Community traveler</p></div></div><p class="notice">${t.women ? "Women-only membership is based on self-declaration. " : ""}A profile is not a guarantee of safety. Get to know your crew before committing.</p><div class="modal-actions">${t.isMember ? `<button class="primary" data-chat="${esc(id)}">Open group chat ${icon("users")}</button>` : t.end < today() || !t.organizerId || t.status !== "open" ? '<button class="primary" disabled>Joining closed</button>' : joinRequest ? '<button class="primary" disabled>Waiting for organizer approval</button>' : t.seats > 0 ? `<button class="primary" data-join="${esc(id)}">Request to join ${icon("arrow-right")}</button>` : '<button class="primary" disabled>No spots available</button>'}<button class="secondary" data-save="${esc(id)}">${icon("bookmark")} ${state.saved.includes(id) ? "Saved" : "Save trip"}</button></div>${owned && t.end >= today() ? `<button class="secondary" data-incoming="${esc(id)}">Manage join requests</button>` : ""}${t.participated ? `<button class="secondary" data-crew="${esc(id)}">Travelers & trip notices</button>` : ""}${t.isMember || joinRequest ? `<button class="report-link" data-leave="${esc(id)}">${t.isMember ? "Leave this trip" : "Cancel my request"}</button>` : ""}<p class="notice">Created by ${esc(t.creator)}. Trip records are retained. ${esc(participationPolicy)} ${esc(completionPolicy)}</p><section class="detail-section" id="trip-reviews"><h3>Travel reviews</h3><p>Loading reviews…</p></section>${t.participated && t.status === "open" && t.end < today() ? `<button class="secondary" data-review="${esc(id)}">Review a traveler</button>` : ""}${!owned ? `<button class="report-link" data-report="${esc(id)}">Report or hide this trip</button>` : ""}</div>`,
   );
   const version = modalVersion;
   try {
@@ -536,9 +757,9 @@ async function detail(id) {
       $("#trip-reviews").innerHTML = "<p>Reviews could not be loaded.</p>";
   }
 }
-function join(id) {
+async function join(id) {
   if (!requireLogin({ type: "join", id })) return;
-  const t = trips().find((t) => t.id === id);
+  const t = await ensureTrip(id);
   if (!t) return;
   if (!state.profile.profileComplete) {
     profile();
@@ -552,7 +773,7 @@ function join(id) {
     return;
   }
   openModal(
-    `<div class="modal-pad"><div class="eyebrow">START WITH A HELLO</div><h2 id="modal-title">Meet your next travel crew.</h2><p>Introduce yourself to ${esc(t.host)} for ${esc(t.title)}.</p><form id="join-form" data-id="${esc(id)}"><div class="form-grid"><label class="form-field full">Your introduction<textarea name="note" required minlength="15" maxlength="600" placeholder="Why does this trip feel like your kind of plan?" autofocus></textarea></label></div><p class="notice">The organizer will review your introduction. Group chat opens only after approval.</p><p class="form-error" data-form-error role="alert"></p><div class="modal-actions"><button class="primary" type="submit">Send join request ${icon("arrow-right")}</button><button class="secondary" type="button" data-trip="${esc(id)}">Back</button></div></form></div>`,
+    `<div class="modal-pad"><div class="eyebrow">START WITH A HELLO</div><h2 id="modal-title">Meet your next travel crew.</h2><p>Introduce yourself to ${esc(t.host)} for ${esc(t.title)}.</p><form id="join-form" data-id="${esc(id)}"><div class="form-grid"><label class="form-field full">Your introduction<textarea name="note" required minlength="15" maxlength="600" placeholder="Why does this trip feel like your kind of plan?" autofocus></textarea></label></div><p class="notice">The organizer will review your introduction. Group chat opens only after approval. ${esc(participationPolicy)}</p><p class="form-error" data-form-error role="alert"></p><div class="modal-actions"><button class="primary" type="submit">Send join request ${icon("arrow-right")}</button><button class="secondary" type="button" data-trip="${esc(id)}">Back</button></div></form></div>`,
   );
 }
 function create() {
@@ -576,12 +797,22 @@ function create() {
 function profile() {
   if (!requireLogin({ type: "profile" })) return;
   openModal(
-    `<div class="modal-pad"><div class="eyebrow">THE PERSON BEHIND THE PLAN</div><h2 id="modal-title">Your traveler profile.</h2><div class="session-email">${icon("mail")}<div>${esc(auth.session?.email)}<small>Private account email</small></div></div><div class="profile-preview"><span class="avatar">${esc(state.profile.name.slice(0, 1))}</span><div><strong>${esc(state.profile.name)}</strong><p>Traveler profile</p></div></div><div class="modal-actions profile-account-actions"><button class="secondary" data-directory>Find or block a traveler</button>${data.user?.googleLinked ? "<span>Google connected</span>" : googleEnabled ? '<a class="secondary" href="/api/auth/google/start?mode=link">Connect Google</a>' : "<small>Google sign-in is not configured yet.</small>"}</div><form id="profile-form"><div class="form-grid"><label class="form-field">First name<input name="firstName" required maxlength="50" autocomplete="given-name" value="${esc(state.profile.firstName)}" autofocus></label><label class="form-field">Last name<input name="lastName" required maxlength="50" autocomplete="family-name" value="${esc(state.profile.lastName)}"></label><label class="form-field">Home city (optional)<input name="city" data-location value="${esc(state.profile.city)}" maxlength="40" placeholder="City only, no exact address"></label><label class="form-field">Gender<select name="gender"><option value="" disabled hidden ${["man", "woman"].includes(state.profile.gender) ? "" : "selected"}>Select gender</option>${[{ value: "man", label: "Male" }, { value: "woman", label: "Female" }].map((g) => `<option value="${g.value}" ${state.profile.gender === g.value ? "selected" : ""}>${g.label}</option>`).join("")}</select></label><label class="form-field full">Your travel style<textarea name="bio" maxlength="500" placeholder="A little about how you like to travel…">${esc(state.profile.bio)}</textarea></label></div><label class="check-label"><input type="checkbox" name="adult" required ${state.profile.age ? "checked" : ""}> I confirm I am 18 or older.</label><p class="notice">Your email is private. Your traveler name and introduction are visible to other members when you join a trip.</p><div class="modal-actions"><button class="primary" type="submit">Save profile ${icon("check")}</button><button class="secondary logout-button" type="button" data-action="logout">Log out</button></div></form></div>`,
+    `<div class="modal-pad"><div class="eyebrow">THE PERSON BEHIND THE PLAN</div><h2 id="modal-title">Your traveler profile.</h2><div class="session-email">${icon("mail")}<div>${esc(auth.session?.email)}<small>Private account email</small></div></div><div class="profile-preview"><span class="avatar">${esc(state.profile.name.slice(0, 1))}</span><div><strong>${esc(state.profile.name)}</strong><p>Traveler profile</p></div></div><div class="modal-actions profile-account-actions"><button class="secondary" data-directory>Find or block a traveler</button>${data.user?.googleLinked ? "<span>Google connected</span>" : googleEnabled ? '<a class="secondary" href="/api/auth/google/start?mode=link">Connect Google</a>' : "<small>Google sign-in is not configured yet.</small>"}</div><form id="profile-form"><div class="form-grid"><label class="form-field">First name<input name="firstName" required maxlength="50" autocomplete="given-name" value="${esc(state.profile.firstName)}" autofocus></label><label class="form-field">Last name<input name="lastName" required maxlength="50" autocomplete="family-name" value="${esc(state.profile.lastName)}"></label><label class="form-field">Home city (optional)<input name="city" data-location value="${esc(state.profile.city)}" maxlength="40" placeholder="City only, no exact address"></label><label class="form-field">Gender<select name="gender"><option value="" disabled hidden ${["man", "woman"].includes(state.profile.gender) ? "" : "selected"}>Select gender</option>${[
+      { value: "man", label: "Male" },
+      { value: "woman", label: "Female" },
+    ]
+      .map(
+        (g) =>
+          `<option value="${g.value}" ${state.profile.gender === g.value ? "selected" : ""}>${g.label}</option>`,
+      )
+      .join(
+        "",
+      )}</select></label><label class="form-field full">Your travel style<textarea name="bio" maxlength="500" placeholder="A little about how you like to travel…">${esc(state.profile.bio)}</textarea></label></div><label class="check-label"><input type="checkbox" name="adult" required ${state.profile.age ? "checked" : ""}> I confirm I am 18 or older.</label><p class="notice">Your email is private. Your traveler name and introduction are visible to other members when you join a trip.</p><div class="modal-actions"><button class="primary" type="submit">Save profile ${icon("check")}</button><button class="secondary logout-button" type="button" data-action="logout">Log out</button></div></form></div>`,
   );
 }
 function safety() {
   openModal(
-    `<div class="modal-pad"><div class="eyebrow">A LITTLE TRUST GOES A LONG WAY</div><h2 id="modal-title">Your journey. Your boundaries.</h2><p>Getting to know someone is part of the journey. Take your time before committing to travel together.</p><ul class="safety-list"><li>${icon("users")}<div><strong>Meet your crew first</strong><p>Have a video call, discuss the plan, and arrange your first meeting in a busy public place.</p></div></li><li>${icon("lock")}<div><strong>Keep personal details yours</strong><p>Avoid sharing your home address, identity documents, live location, or private contact details in public trip descriptions.</p></div></li><li>${icon("shield")}<div><strong>Trust has no shortcut</strong><p>A travel-fit score measures shared preferences. Even future verification badges won’t guarantee someone’s behavior or safety.</p></div></li><li>${icon("flag")}<div><strong>You can always change your mind</strong><p>Leave a plan if you feel uncomfortable. Use “Report or hide this trip” on a listing to record a report and hide it from your feed.</p></div></li></ul><p class="notice">In an emergency in India, call 112 or contact local emergency services. Share your plans with a trusted person. Tripling does not provide emergency monitoring. Reports are recorded for follow-up; they are not an emergency service.</p><div class="modal-actions"><button class="primary" data-action="close">Got it. Let’s explore.</button></div></div>`,
+    `<div class="modal-pad"><div class="eyebrow">A LITTLE TRUST GOES A LONG WAY</div><h2 id="modal-title">Your journey. Your boundaries.</h2><p>Getting to know someone is part of the journey. Take your time before committing to travel together.</p><ul class="safety-list"><li>${icon("users")}<div><strong>Meet your crew first</strong><p>Have a video call, discuss the plan, and arrange your first meeting in a busy public place.</p></div></li><li>${icon("lock")}<div><strong>Keep personal details yours</strong><p>Avoid sharing your home address, identity documents, live location, or private contact details in public trip descriptions.</p></div></li><li>${icon("shield")}<div><strong>Trust has no shortcut</strong><p>A travel-fit score measures shared preferences. Even future verification badges won’t guarantee someone’s behavior or safety.</p></div></li><li>${icon("flag")}<div><strong>Your safety comes first</strong><p>Never continue a journey that feels unsafe. ${esc(participationPolicy)} Use “Report or hide this trip” on a listing to record a report and hide it from your feed.</p></div></li></ul><p class="notice">In an emergency in India, call 112 or contact local emergency services. Share your plans with a trusted person. Tripling does not provide emergency monitoring. Reports are recorded for follow-up; they are not an emergency service.</p><div class="modal-actions"><button class="primary" data-action="close">Got it. Let’s explore.</button></div></div>`,
   );
 }
 function filters() {
@@ -617,16 +848,18 @@ function report(id) {
 }
 async function saveTrip(id) {
   if (!requireLogin({ type: "save", id })) return;
-  const saved = !state.saved.includes(id);
+  const saved = !state.saved.includes(id),
+    version = modalVersion;
+  const updateDetail = modal.open && currentTrip === id && !!$("#trip-reviews");
   await api(`/trips/${id}/save`, { method: "PUT", body: { saved } });
   await refresh();
-  if (modal.open) await detail(id);
+  if (updateDetail && modal.open && version === modalVersion) await detail(id);
   toast(saved ? "Saved for another day." : "Trip removed from saved.");
 }
 async function incoming(id) {
   if (!requireLogin({ type: "view", view: "my-trips" })) return;
   await refresh();
-  const t = trips().find((t) => t.id === id);
+  const t = await ensureTrip(id);
   if (!t) return;
   const requests = data.incoming.filter((r) => r.trip_id === id);
   openModal(
@@ -636,7 +869,7 @@ async function incoming(id) {
 async function chat(id) {
   if (!requireLogin({ type: "chat", id })) return;
   const result = await api(`/trips/${id}/members`);
-  const t = trips().find((t) => t.id === id);
+  const t = await ensureTrip(id);
   openModal(
     `<div class="modal-pad"><div class="eyebrow">YOUR TRAVEL CREW</div><h2 id="modal-title">${esc(t?.title || "Group chat")}</h2><p>${result.members.map((m) => esc(m.name)).join(" · ")}</p><div id="chat-messages" class="chat-messages" aria-live="polite"></div><p id="chat-error" class="form-error" role="status"></p>${t?.status === "canceled" || t?.end < today() || !t?.organizerId ? '<p class="notice">This trip is past or inactive. The chat is read-only.</p>' : `<form id="chat-form" data-id="${esc(id)}"><label class="form-field">Message your crew<textarea name="body" required maxlength="2000" rows="3" placeholder="A public meeting point? A place to stay? Start planning together."></textarea></label><div class="modal-actions"><button class="primary" type="submit">Send message ${icon("arrow-right")}</button></div></form>`}</div>`,
   );
@@ -729,13 +962,13 @@ async function resumeAction() {
   }
   if (
     ["save", "join", "report", "chat"].includes(action.type) &&
-    !trips().some((t) => t.id === action.id)
+    !(await ensureTrip(action.id))
   ) {
     toast("That trip is no longer available.");
     return;
   }
   if (action.type === "save") await saveTrip(action.id);
-  if (action.type === "join") join(action.id);
+  if (action.type === "join") await join(action.id);
   if (action.type === "create") create();
   if (action.type === "profile") profile();
   if (action.type === "report") report(action.id);
@@ -833,6 +1066,18 @@ async function handleClick(event) {
       return;
     }
   }
+  if (b.dataset.recovery) {
+    if (b.dataset.recovery === "forgot") {
+      history.pushState(null, "", "/#forgot-password");
+      showRecovery("forgot");
+    } else {
+      resetToken = "";
+      history.replaceState(null, "", "/#login");
+      setAuthMode("login");
+      setView("login");
+    }
+    return;
+  }
   if (b.dataset.authMode) {
     setAuthMode(b.dataset.authMode);
     return;
@@ -862,7 +1107,7 @@ async function handleClick(event) {
     return;
   }
   if (b.dataset.join) {
-    join(b.dataset.join);
+    await join(b.dataset.join);
     return;
   }
   if (b.dataset.chat) {
@@ -898,7 +1143,7 @@ async function handleClick(event) {
   if (b.dataset.leave) {
     if (!requireLogin({ type: "view", view: "my-trips" })) return;
     openModal(
-      `<div class="modal-pad"><h2 id="modal-title">Leave this travel plan?</h2><p>Your active membership will end. The trip and participation history stay available. If you are the organizer, another active member becomes organizer. With no members left, new requests close.</p><div class="modal-actions"><button class="primary" data-confirm-leave="${esc(b.dataset.leave)}">Leave plan</button><button class="secondary" data-action="close">Keep it</button></div></div>`,
+      `<div class="modal-pad"><h2 id="modal-title">Leave this travel plan?</h2><p>${trips().find((t) => t.id === b.dataset.leave)?.isMember ? "Your active membership will end." : "Your pending request will be withdrawn; no confirmed membership is canceled."} ${esc(participationPolicy)} The trip and participation history stay available. If you are the organizer, another active member becomes organizer. With no members left, new requests close.</p><div class="modal-actions"><button class="primary" data-confirm-leave="${esc(b.dataset.leave)}">Leave plan</button><button class="secondary" data-action="close">Keep it</button></div></div>`,
     );
     return;
   }
@@ -1005,8 +1250,8 @@ $("#search-form").addEventListener("submit", async (event) => {
       }
       if ($("#departure").value) params.set("when", $("#departure").value);
       if (selectedStyle) params.set("style", selectedStyle);
-      else if (!["All trips", "Women only"].includes(category))
-        params.set("style", category);
+      if (!["All trips", "Women only"].includes(category))
+        params.set("category", category);
       if (travelMode) params.set("mode", travelMode);
       if (womenFilter || category === "Women only") params.set("women", "true");
       const result = await api("/trips/nearby?" + params),
@@ -1024,8 +1269,11 @@ $("#search-form").addEventListener("submit", async (event) => {
         next = page.nextOffset;
       }
       result.results = combined;
+      await cacheNearby(combined.map((r) => r.id));
       const results = [[field, result]];
       if (!matchesCurrent()) return;
+      feedVersion++;
+      feedLoading = false;
       nearbySearch = {
         query: query.toLowerCase(),
         origin: origin.toLowerCase(),
@@ -1062,6 +1310,7 @@ $("#search-form").addEventListener("submit", async (event) => {
         error.message + " Showing text matches only.";
     }
   visibleCount = requested;
+  if (!activeNearby()) await loadFeed();
   render();
   $(".explore").scrollIntoView({ behavior: "smooth", block: "start" });
 });
@@ -1082,8 +1331,7 @@ $("#load-more").addEventListener("click", () => {
     $("#search-form").requestSubmit();
     return;
   }
-  visibleCount += 6;
-  render();
+  loadFeed(true).catch(errorMessage);
 });
 document.addEventListener("submit", async (event) => {
   const form = event.target;
@@ -1259,7 +1507,7 @@ function blockNotices(notices) {
 }
 async function crew(id) {
   const result = await api(`/trips/${id}/members`),
-    trip = trips().find((t) => t.id === id);
+    trip = await ensureTrip(id);
   openModal(
     `<div class="modal-pad"><h2 id="modal-title">${esc(trip?.title)} · Travelers</h2><p>Registered participants, including those who left. Private notices stay within this trip.</p>${result.members.map((m) => `<div class="traveler-row"><strong>${esc(m.name)}</strong> · ${m.active ? "Active" : "Left trip"}<p>${esc(m.bio)}</p><button class="secondary" data-traveler="${esc(m.id)}">Traveler profile</button></div>`).join("")}<h3>Trip notices</h3>${blockNotices(result.blocks)}</div>`,
   );
@@ -1273,7 +1521,7 @@ function directory() {
 async function traveler(id) {
   const result = await api(`/travelers/${id}`);
   openModal(
-    `<div class="modal-pad"><h2 id="modal-title">${esc(result.user.name)}</h2><p>${esc(result.user.bio)}</p>${id === data.user?.id ? "" : result.myBlockId ? `<button class="secondary" data-unblock="${esc(result.myBlockId)}">Unblock traveler</button>` : `<form id="block-form" data-id="${esc(id)}"><h3>Block this traveler</h3><p class="notice">Blocks prevent new requests or approvals into each other’s crews and hide messages between you. Existing members remain in the trip; you may leave at any time.</p><div class="form-grid"><label class="form-field full">Category<select name="category">${["Harassment", "Safety concern", "Spam", "Communication / boundaries", "Other"].map((c) => `<option>${esc(c)}</option>`).join("")}</select></label><label class="form-field full">Who can see your reason?<select name="tripId"><option value="">Only me (private block)</option>${result.sharedTrips.map((t) => `<option value="${esc(t.id)}">Registered participants: ${esc(t.title)}</option>`).join("")}</select></label><label class="form-field full">Explain your reason<textarea name="reason" required minlength="20" maxlength="1000" placeholder="Describe the behavior clearly. Do not include contact details or identity documents."></textarea></label></div><p class="notice">A shared reason is labeled as your statement. Guests and unrelated travelers cannot see it. Participants may report it.</p><p class="form-error" data-form-error role="alert"></p><button class="primary" type="submit">Block traveler</button></form>`}<h3>Notices in your shared trips</h3>${blockNotices(result.notices)}</div>`,
+    `<div class="modal-pad"><h2 id="modal-title">${esc(result.user.name)}</h2><p>${esc(result.user.bio)}</p>${id === data.user?.id ? "" : result.myBlockId ? `<button class="secondary" data-unblock="${esc(result.myBlockId)}">Unblock traveler</button>` : `<form id="block-form" data-id="${esc(id)}"><h3>Block this traveler</h3><p class="notice">Blocks prevent new requests or approvals into each other’s crews and hide messages between you. Existing members remain in the trip; ${esc(participationPolicy)}</p><div class="form-grid"><label class="form-field full">Category<select name="category">${["Harassment", "Safety concern", "Spam", "Communication / boundaries", "Other"].map((c) => `<option>${esc(c)}</option>`).join("")}</select></label><label class="form-field full">Who can see your reason?<select name="tripId"><option value="">Only me (private block)</option>${result.sharedTrips.map((t) => `<option value="${esc(t.id)}">Registered participants: ${esc(t.title)}</option>`).join("")}</select></label><label class="form-field full">Explain your reason<textarea name="reason" required minlength="20" maxlength="1000" placeholder="Describe the behavior clearly. Do not include contact details or identity documents."></textarea></label></div><p class="notice">A shared reason is labeled as your statement. Guests and unrelated travelers cannot see it. Participants may report it.</p><p class="form-error" data-form-error role="alert"></p><button class="primary" type="submit">Block traveler</button></form>`}<h3>Notices in your shared trips</h3>${blockNotices(result.notices)}</div>`,
   );
 }
 document.addEventListener("click", (event) => {
@@ -1395,7 +1643,8 @@ async function boot() {
     if (
       data.user &&
       !data.user.profileComplete &&
-      !["#profile", "#sso-complete"].includes(location.hash)
+      !["#profile", "#sso-complete"].includes(location.hash) &&
+      !/^#(?:forgot-password|reset-password)/.test(location.hash)
     )
       profile();
     const authError = new URLSearchParams(location.search).get("auth_error");

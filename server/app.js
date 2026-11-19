@@ -1,4 +1,8 @@
 import express from "express";
+import {
+  createPasswordResetMailer,
+  registerPasswordRecovery,
+} from "./password-recovery.js";
 import { organizerVerificationEnabled } from "./roles.js";
 import { registerCommunity } from "./community.js";
 import { GENDERS } from "./trip-options.js";
@@ -15,7 +19,7 @@ import {
 import { registerTripRoutes } from "./trips.js";
 import { registerBlockRoutes } from "./blocks.js";
 import { registerGoogleAuth } from "./google-auth.js";
-import { transaction } from "./db.js";
+import { transaction, lockTravelers } from "./db.js";
 import {
   cookieName,
   cookieOptions,
@@ -88,6 +92,7 @@ export function createApp(
     production = process.env.NODE_ENV === "production",
     publicOrigin = process.env.PUBLIC_ORIGIN,
     organizerVerificationRequired = organizerVerificationEnabled(),
+    passwordResetMailer = createPasswordResetMailer(),
     googleAdapter = null,
     placesAdapter = createPlacesAutocomplete(),
     cityResolver = createCityResolver(),
@@ -207,6 +212,12 @@ export function createApp(
     if (result.attempts > limit)
       fail(429, "Too many attempts. Please try again in 15 minutes.");
   }
+  registerPasswordRecovery(app, pool, {
+    production,
+    publicOrigin,
+    throttle,
+    mailer: passwordResetMailer,
+  });
   app.get("/api/legal", async (req, res) =>
     res.json({
       documents: legalMetadata(
@@ -271,9 +282,13 @@ export function createApp(
       user?.password_hash || dummyHash,
     );
     if (!user || !valid) fail(401, "Email or password is incorrect.");
-    await transaction(pool, (db) =>
-      issueSession(db, req, res, user.id, production),
-    );
+    await transaction(pool, async (db) => {
+      await lockTravelers(db, [user.id]);
+      const current = await db.one("users", { id: user.id });
+      if (current?.password_hash !== user.password_hash)
+        fail(401, "Email or password is incorrect.");
+      await issueSession(db, req, res, user.id, production);
+    });
     res.json({ user: publicUser(user) });
   });
   app.get("/api/auth/session", (req, res) =>

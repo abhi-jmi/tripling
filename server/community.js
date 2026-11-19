@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { refreshLocationBatch } from "./location-maintenance.js";
+import { registerModeration } from "./moderation.js";
 import { editableTripSchema, tripPatchSchema } from "./trip-input.js";
 import { departureFromLocalTime } from "./trip-time.js";
 import { indexTripLocation } from "./geo-index.js";
@@ -104,6 +106,7 @@ export function registerCommunity(
       await throttle(req, `admin:${req.user.id}`, 100);
     next();
   });
+  registerModeration(app, pool);
   const notify = (db, user, body) =>
     db.insert("notifications", { user_id: user, trip_id: null, body });
   app.get("/api/organizer/verification", requireUser, async (req, res) => {
@@ -181,49 +184,18 @@ export function registerCommunity(
         .object({ limit: z.number().int().min(1).max(25).default(25) })
         .parse(req.body);
       if (!cityResolver) fail(503, "Google Places is not configured.");
-      const candidates = await pool.database
-        .collection("trips")
-        .aggregate([
-          { $match: { status: "open", ends_on: { $gte: travelDate() } } },
-          {
-            $lookup: {
-              from: "trip_locations",
-              localField: "id",
-              foreignField: "trip_id",
-              as: "geo",
-            },
-          },
-          {
-            $match: {
-              $or: [
-                { geo: { $size: 0 } },
-                { "geo.expires_at": { $lte: new Date() } },
-              ],
-            },
-          },
-          { $sort: { starts_on: 1, id: 1 } },
-          { $limit: limit },
-        ])
-        .toArray();
-      let indexed = 0,
-        unresolved = 0;
-      for (let i = 0; i < candidates.length; i += 5)
-        await Promise.all(
-          candidates.slice(i, i + 5).map(async (trip) => {
-            const r = await indexTripLocation(pool, trip, {
-              resolver: cityResolver,
-            });
-            if (r.indexed) indexed++;
-            if (r.missing?.length) unresolved++;
-          }),
-        );
+      const result = await refreshLocationBatch(pool, {
+        resolver: cityResolver,
+        limit,
+        refreshAheadMs: 0,
+      });
       await audit(
         pool,
         req.user.id,
         "locations_reindexed",
-        String(candidates.length),
+        String(result.processed),
       );
-      res.json({ processed: candidates.length, indexed, unresolved });
+      res.json(result);
     },
   );
   app.get("/api/admin/verifications", requireUser, admin, async (req, res) => {
@@ -538,7 +510,12 @@ export function registerCommunity(
         "trips",
         { id: tripId },
         {
-          $set: { ...defined, revision: revision + 1, updated_at: new Date() },
+          $set: {
+            ...defined,
+            revision: revision + 1,
+            updated_at: new Date(),
+            ...(indexed ? { location_refresh_after: new Date(0) } : {}),
+          },
           ...(patch.destinationPlaceId === undefined &&
           patch.destination !== undefined &&
           patch.destination !== t.destination

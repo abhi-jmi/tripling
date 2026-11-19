@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { transaction } from "./db.js";
+import { organizerVerificationEnabled } from "./roles.js";
 const escape = (value) =>
   String(value).replace(
     /[&<>"']/g,
@@ -30,6 +31,11 @@ export function legalConfiguration(env = process.env) {
     jurisdiction: jurisdiction || "Jurisdiction pending",
     region: env.AWS_REGION || "Local development; not deployed",
     published,
+    organizerApprovalRule: organizerVerificationEnabled(
+      env.ORGANIZER_VERIFICATION_REQUIRED ?? "false",
+    )
+      ? "Organizer application approval is required before publishing or managing trips. A Verified Organizer badge records a reference-review decision, not government identity verification, guaranteed competence, insurance or a guarantee of safety. Administrators review references and record their decisions. Supporting documents must not contain government IDs."
+      : "During the current beta, signed-in adults with complete names can publish and manage trips without organizer application approval. Organizer verification applications and public verification badges are paused. This does not verify a traveler’s identity, experience or safety. Organizers still review individual join requests; normal eligibility, capacity and participation rules continue to apply.",
   };
 }
 export async function publishLegalDocuments(pool, env = process.env) {
@@ -41,7 +47,7 @@ export async function publishLegalDocuments(pool, env = process.env) {
     );
     const replace = (value) =>
       value.replace(
-        /\{\{(operator|contact|jurisdiction|region)\}\}/g,
+        /\{\{(operator|contact|jurisdiction|region|organizerApprovalRule)\}\}/g,
         (_, key) => config[key],
       );
     const content = {
@@ -61,11 +67,17 @@ export async function publishLegalDocuments(pool, env = process.env) {
     });
   }
   await transaction(pool, async (db) => {
-    for (const doc of documents)
+    for (const doc of documents) {
+      await db.updateMany(
+        "legal_documents",
+        { slug: doc.slug, active: true },
+        { $set: { active: false } },
+      );
       await db.update(
         "legal_documents",
         { slug: doc.slug, version: doc.version },
         {
+          $set: { active: true },
           $setOnInsert: {
             slug: doc.slug,
             version: doc.version,
@@ -81,13 +93,16 @@ export async function publishLegalDocuments(pool, env = process.env) {
         },
         { upsert: true },
       );
+    }
   });
 }
 export async function currentLegalDocuments(db, { production = false } = {}) {
   const docs = await db.all(
     "legal_documents",
     production ? { published: true } : {},
-    { sort: { slug: 1, published: -1, created_at: -1, version: -1 } },
+    {
+      sort: { slug: 1, active: -1, published: -1, created_at: -1, version: -1 },
+    },
   );
   const result = {};
   for (const doc of docs) if (!result[doc.slug]) result[doc.slug] = doc;

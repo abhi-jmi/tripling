@@ -218,8 +218,7 @@ trip actions such as edit/confirmation continue using the existing dialog flow.
 signed-in adults with complete names organize and manage their own trips without
 an approval. Authentication, ownership, group eligibility, departure validation,
 capacity, blocks, cancellation limits, admin permissions and audit records remain
-enforced. No existing account is auto-approved and verified badges still require
-an actual approval.
+enforced. No existing account is auto-approved. Beta hides verified badges, including badges for previously approved accounts; approval records are retained for enforced mode.
 
 The server exposes this setting through `/api/bootstrap` under
 `features.organizerVerificationRequired`. The create-trip UI uses the same setting.
