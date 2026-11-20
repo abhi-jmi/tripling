@@ -28,11 +28,17 @@ The service grants its runtime role access only to that optional secret, retriev
 
 Account-plan or organization policy restrictions on NAT or secret creation must be resolved through the account owner/AWS support. Do not delete the database or foundation to work around an authorization error. GitHub automatic deployment still requires the previously documented OIDC role configuration; Google sign-in does not change that requirement.
 
+## Matching-email account connection
+
+Only the email from Google's validated ID-token claims is considered; an email supplied in a browser query or form cannot select an existing account. Existing Google connections are resolved by their stable provider subject first, even if Google later changes the account's email. A second Google subject cannot replace an already connected identity, and a connected Google identity cannot be transferred to another Tripling account through matching emails. Identity connection and session creation run in one transaction under a user lock, with unique provider/subject and provider/user constraints. Concurrent matching sign-ins produce one connection and valid sessions for the same account. Explicit profile linking also rechecks its originating session after the provider exchange, so a logged-out or reset session cannot finish linking.
+
+This is an explicit product policy: the app trusts Google's verified email claim to connect an unlinked password account, rather than asking for the old Tripling password. New emails still use the existing first/last name, adult-confirmation and policy-consent screen before an account is created. Unverified or invalid claims, expired/replayed state, a missing browser cookie, and conflicting identity connections are rejected. Password reset remains the recovery option for a password account when the Google identity does not match its existing connection.
+
 ## Verify after deployment
 
 - Visit `https://tripling.in/api/auth/providers`: `google` should be `true`.
 - New Google user: choose Google, verify first/last names, confirm 18+, and accept the current policies. A Google-only user signs in with Google subsequently; no local password is invented.
-- Existing email/password user: log in normally, open the traveler profile, choose **Connect Google**, and select the Google account with the same email. Matching an email alone never auto-links accounts.
+- Existing email/password user: choose **Continue with Google** using the same email. After a successful Google OpenID Connect exchange with `email_verified=true`, the server connects that Google identity to the existing Tripling account and signs in immediately. Email comparison is case-insensitive; aliases such as dotted or plus-tagged addresses are not rewritten. The account ID, existing password, names, profile, trips, memberships, roles and consent history are preserved. **Connect Google** in the profile remains available as an optional explicit linking flow.
 - Cancel Google authorization, try a stale callback, and confirm login can be restarted without an account being created.
 - Sign out and sign in again. Check that the correct profile, saved trips and memberships return.
 
