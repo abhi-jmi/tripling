@@ -8,7 +8,7 @@ import {
   sessionToken,
   cookieOptions,
 } from "./auth.js";
-import { transaction } from "./db.js";
+import { transaction, lockTravelers } from "./db.js";
 import { currentLegalDocuments } from "./legal.js";
 import { httpError } from "./travel-rules.js";
 
@@ -155,41 +155,82 @@ export function registerGoogleAuth(
       )
         return reject("verification");
       const email = claims.email.toLowerCase();
-      const identity = await pool.one("oauth_identities", {
-        provider: "google",
-        subject: claims.sub,
-      });
-      const identityUser = identity
-        ? await pool.one("users", { id: identity.user_id })
-        : null;
-      if (flow.link_user_id) {
+      // Use the stable Google subject first. Matching an email may connect an
+      // unlinked account, but never transfers an existing Google identity.
+      const connectIdentity = async (db, user) => {
+        const subject = await db.one("oauth_identities", {
+          provider: "google",
+          subject: claims.sub,
+        });
+        const connected = await db.one("oauth_identities", {
+          provider: "google",
+          user_id: user.id,
+        });
         if (
-          email !== req.user.email ||
-          (identityUser && identityUser.id !== req.user.id)
+          (subject && subject.user_id !== user.id) ||
+          (connected && connected.subject !== claims.sub)
         )
-          return reject("link");
-        await pool.update(
-          "oauth_identities",
-          { provider: "google", subject: claims.sub },
-          {
-            $setOnInsert: {
-              provider: "google",
-              subject: claims.sub,
-              user_id: req.user.id,
-              created_at: new Date(),
-            },
-          },
-          { upsert: true },
-        );
+          throw Object.assign(new Error("Google identity conflict"), {
+            authError: "link",
+          });
+        if (!subject)
+          await db.insert("oauth_identities", {
+            provider: "google",
+            subject: claims.sub,
+            user_id: user.id,
+          });
+      };
+      if (flow.link_user_id) {
+        await transaction(pool, async (db) => {
+          await lockTravelers(db, [flow.link_user_id]);
+          const user = await db.one("users", { id: flow.link_user_id });
+          const activeSession = await db.one("sessions", {
+            token_hash: flow.link_session_hash,
+            user_id: flow.link_user_id,
+            expires_at: { $gt: new Date() },
+          });
+          if (!activeSession)
+            throw Object.assign(new Error("Link session expired"), {
+              authError: "expired",
+            });
+          if (!user || email !== user.email.toLowerCase())
+            throw Object.assign(new Error("Google email mismatch"), {
+              authError: "link",
+            });
+          await connectIdentity(db, user);
+        });
         return res.redirect("/#profile");
       }
-      if (identityUser) {
-        await transaction(pool, (db) =>
-          issueSession(db, req, res, identityUser.id, production),
+      const existing = await transaction(pool, async (db) => {
+        const identity = await db.one("oauth_identities", {
+          provider: "google",
+          subject: claims.sub,
+        });
+        const match = await db.one(
+          "users",
+          identity ? { id: identity.user_id } : { email },
         );
+        if (!match) {
+          if (identity)
+            throw Object.assign(new Error("Google identity has no account"), {
+              authError: "link",
+            });
+          return false;
+        }
+        await lockTravelers(db, [match.id]);
+        const user = await db.one("users", { id: match.id });
+        if (!user)
+          throw Object.assign(new Error("Account is unavailable"), {
+            authError: "link",
+          });
+        await connectIdentity(db, user);
+        await issueSession(db, req, res, user.id, production);
+        return true;
+      });
+      if (existing) {
+        clear(res, pendingCookie);
         return res.redirect("/#discover");
       }
-      if (await pool.one("users", { email })) return reject("existing");
       const token = randomBytes(32).toString("hex");
       await pool.insert("oauth_pending", {
         token_hash: digest(token),
@@ -202,7 +243,7 @@ export function registerGoogleAuth(
       res.cookie(pendingCookie, token, options).redirect("/#sso-complete");
     } catch (e) {
       console.error("Google sign-in failed:", e.code || e.name);
-      return reject("verification");
+      return reject(e.authError || "verification");
     }
   });
   async function pending(req, db = pool, consume = false) {
@@ -281,7 +322,7 @@ export function registerGoogleAuth(
       if (e.code === 11000)
         throw httpError(
           409,
-          "An account already exists. Log in with your existing method and connect Google from your profile.",
+          "An account with this email was created while signing in. Choose Continue with Google again to sign into it.",
         );
       throw e;
     }

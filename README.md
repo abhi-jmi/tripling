@@ -21,7 +21,7 @@ For a separate Node.js process, run `npm ci`, copy `.env.example` to untracked `
 ## Features
 
 - Email/password registration with required first/last names, confirmation, 18+ acknowledgement, and versioned legal consent. Passwords use salted scrypt; sessions use HttpOnly cookies and hashed tokens in MongoDB. Optional Amazon SES password recovery uses expiring single-use links and revokes prior sessions after reset.
-- Optional [Google sign-in](docs/google-sign-in.md) with PKCE, nonce, browser-bound state and deliberate account linking.
+- Optional [Google sign-in](docs/google-sign-in.md) with PKCE, nonce and browser-bound state. Verified matching Google emails connect to the existing account and sign in directly; existing identity bindings and account data are preserved.
 - Database-backed trip posting, alphabetical location suggestions, saved trips, organizer approvals, private group messages and notifications.
 - Transactions and unique indexes protect membership, capacity, consent and identity changes across multiple ECS tasks. MongoDB **replica sets/Atlas are required**; standalone MongoDB is rejected at startup.
 - Published trips are retained unless an administrator explicitly deletes them with a reason and confirmation. Confirmed members can leave more than 24 hours before departure; closer departures and missing legacy times require an audited support exception. Pending requests can be withdrawn anytime. Organizer duties pass to the earliest remaining member. Trips complete automatically after their return date in India time; participation history and reviews remain available.

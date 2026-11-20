@@ -1,9 +1,9 @@
 {
   "slug": "terms",
-  "version": "2026-11-19.2",
+  "version": "2026-11-21.1",
   "title": "Terms and Conditions",
-  "effectiveOn": "2026-11-19",
-  "introduction": "Last updated: November 19, 2026. Welcome to Tripling (the “Platform”). These Terms govern access to and use of our travel companion website. By registering, you agree to these Terms and acknowledge the Privacy Policy. If you do not agree, do not create an account or use the service.",
+  "effectiveOn": "2026-11-21",
+  "introduction": "Last updated: November 21, 2026. Welcome to Tripling (the “Platform”). These Terms govern access to and use of our travel companion website. By registering, you agree to these Terms and acknowledge the Privacy Policy. If you do not agree, do not create an account or use the service.",
   "sections": [
     {
       "heading": "1. Nature of service and responsibility",
@@ -21,7 +21,7 @@
         "You must be at least eighteen (18) years old to register and participate. Age is self-confirmed rather than independently verified. Give accurate information, keep your login credentials confidential, and report suspected unauthorized use to {{contact}}.",
         "Signup uses an email address and password. Password confirmation and acceptance of the current Terms and Privacy Policy are required. You are responsible for activity you authorize through your account; applicable law determines responsibility for unauthorized activity.",
         "Organizers review join requests. Women-only trip eligibility is based on self-declared profile information and is checked when a traveler requests to join and when the organizer approves. It is not identity verification or a safety certification.",
-        "First and last name are mandatory for registration and participation. Existing accounts must complete these fields before creating or joining trips. Optional Google sign-in requires a verified Google email, age confirmation and policy acceptance for new accounts. To connect an existing password account, sign in first and select the matching Google account from your profile."
+        "First and last name are mandatory for registration and participation. Existing accounts must complete these fields before creating or joining trips. Optional Google sign-in requires a verified Google email, age confirmation and policy acceptance for new accounts. When Google sign-in verifies an email matching an existing unlinked Tripling account, we connect that Google identity and sign in to the existing account without asking for its Tripling password. Existing account data and password access are retained. An existing Google identity connection cannot be transferred to another account through email matching."
       ]
     },
     {

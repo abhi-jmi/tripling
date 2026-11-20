@@ -987,7 +987,7 @@ try {
       },
     );
     await t.test(
-      "Google callback binds browser and state, verifies email and does not auto-link",
+      "Google callback binds browser and state, verifies email and signs into matching accounts",
       async () => {
         async function start(cookie = "") {
           const r = await fetch(base + "/api/auth/google/start", {
@@ -1025,11 +1025,22 @@ try {
           email_verified: true,
           email: "owner@example.com",
         };
-        assert.match(
-          (await callback(await start())).headers.get("location"),
-          /existing/,
+        const matched = await callback(await start());
+        assert.equal(matched.headers.get("location"), "/#discover");
+        assert.equal(
+          (
+            await pool.one("oauth_identities", {
+              provider: "google",
+              subject: googleClaims.sub,
+            })
+          ).user_id,
+          ownerUser.id,
         );
-        googleClaims = { ...googleClaims, email: "google@example.com" };
+        googleClaims = {
+          ...googleClaims,
+          sub: "new-google-user",
+          email: "google@example.com",
+        };
         const pending = await callback(await start());
         assert.equal(pending.headers.get("location"), "/#sso-complete");
         const google = new Client();
@@ -1092,7 +1103,7 @@ try {
         };
         googleClaims = {
           ...googleClaims,
-          sub: "owner-google",
+          sub: "google-new-user",
           email: "owner@example.com",
         };
         assert.equal(

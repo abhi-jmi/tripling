@@ -1654,8 +1654,8 @@ async function boot() {
     if (authError) {
       const messages = {
         existing:
-          "This email already has an account. Log in with your password, then connect Google in your profile.",
-        link: "Use the Google account matching your Tripling email.",
+          "This email already has an account. Choose Continue with Google again to sign into it.",
+        link: "This Google account does not match the account connection. Use the Google account originally connected to your profile, or your Tripling password.",
         expired: "Google sign-in expired. Please try again.",
         canceled: "Google sign-in was canceled.",
         verification: "Google sign-in could not be verified. Please try again.",
